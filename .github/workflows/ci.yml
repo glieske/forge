@@ -160,14 +160,14 @@ jobs:
           cache: true
 
       - name: Configure AWS credentials from OIDC role
-        if: vars.AWS_ROLE_TO_ASSUME != ''
+        if: secrets.AWS_ROLE_TO_ASSUME != ''
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ inputs.aws_region }}
 
       - name: Configure AWS credentials from secrets
-        if: vars.AWS_ROLE_TO_ASSUME == ''
+        if: secrets.AWS_ROLE_TO_ASSUME == ''
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}

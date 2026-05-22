@@ -97,7 +97,7 @@ go run ./tools/generate-keypair
 
 Store `FORGE_ED25519_PRIVATE_KEY` as a GitHub secret. Put `FORGE_ED25519_PUBLIC_KEY` in `security.public_key` for clients.
 
-AWS credentials can be provided either by repository variable `AWS_ROLE_TO_ASSUME` for OIDC, or by secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+AWS credentials can be provided either by repository secret `AWS_ROLE_TO_ASSUME` for OIDC, or by secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 
 The workflow uploads only update artifacts to:
 
