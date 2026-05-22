@@ -368,7 +368,7 @@ func (m Manager) requireTrusted(item Installed) error {
 	if !m.Config.Security.RequireSignatures {
 		return nil
 	}
-	if item.Trust.Trusted == false {
+	if !item.Trust.Trusted {
 		return fmt.Errorf("plugin %s is not trusted: missing verified signature metadata", item.Name)
 	}
 	if m.Config.Security.PublicKey == "" {
