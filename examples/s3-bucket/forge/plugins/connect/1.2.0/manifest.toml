@@ -1,0 +1,41 @@
+schema = 1
+name = "connect"
+version = "1.2.0"
+description = "Open developer connectivity tunnels"
+entrypoint = "forge-connect"
+min_forge_version = "0.1.0"
+
+[[commands]]
+name = "connect"
+description = "Open a tunnel to an internal service"
+
+[[commands.args]]
+name = "service"
+position = 1
+required = true
+description = "Service to connect to"
+value_provider = "global.services"
+fallback_values = ["db", "redis"]
+
+[[commands.args]]
+name = "environment"
+position = 2
+required = true
+description = "Target environment"
+value_provider = "global.environments"
+fallback_values = ["dev", "stage", "prod"]
+
+[[config]]
+key = "default_profile"
+type = "string"
+description = "Default AWS profile"
+value_provider = "global.aws_profiles"
+secret = false
+required = false
+
+[[config]]
+key = "api_token"
+type = "secret_string"
+description = "Optional provider token"
+secret = true
+required = false

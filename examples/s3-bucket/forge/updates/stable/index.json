@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "channel": "stable",
+  "latest": "0.2.0",
+  "minimum_supported": "0.1.0",
+  "versions": [
+    "0.2.0"
+  ]
+}

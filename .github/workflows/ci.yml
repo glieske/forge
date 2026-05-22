@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Build and deploy update artifacts to S3"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      s3_bucket:
+        description: "Target S3 bucket name, without s3://"
+        required: false
+        type: string
+      s3_prefix:
+        description: "Bucket prefix. Use forge for URLs ending in /forge/updates"
+        required: false
+        default: "forge"
+        type: string
+      channel:
+        description: "Release channel"
+        required: false
+        default: "stable"
+        type: choice
+        options:
+          - stable
+          - beta
+          - dev
+      version:
+        description: "Version to publish, for example 0.2.0"
+        required: false
+        type: string
+      aws_region:
+        description: "AWS region"
+        required: false
+        default: "eu-central-1"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+env:
+  GO_VERSION: "1.26.2"
+
+jobs:
+  ci:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Verify module metadata
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
+      - name: Check formatting
+        run: make fmt-check
+
+      - name: Check shell scripts
+        run: sh -n scripts/dev.sh scripts/build-all.sh scripts/package-release.sh
+
+      - name: Vet
+        run: make lint
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Test
+        run: make test
+
+      - name: Build
+        run: make build
+
+      - name: Cross-compile supported targets
+        run: make build-all
+
+      - name: Check examples
+        run: make examples-check
+
+      - name: Validate S3 example JSON
+        run: jq empty $(find examples/s3-bucket -name '*.json' -print)
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Upload forge binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-linux-amd64
+          path: bin/forge
+
+  deploy-s3:
+    name: Deploy S3 Update Repository
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy == 'true'
+    steps:
+      - name: Validate inputs
+        run: |
+          test -n "${{ inputs.s3_bucket }}" || (echo "s3_bucket is required when deploy=true" && exit 2)
+          test -n "${{ inputs.version }}" || (echo "version is required when deploy=true" && exit 2)
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Configure AWS credentials from OIDC role
+        if: vars.AWS_ROLE_TO_ASSUME != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Configure AWS credentials from secrets
+        if: vars.AWS_ROLE_TO_ASSUME == ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Build signed update repository
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          FORGE_ED25519_PRIVATE_KEY: ${{ secrets.FORGE_ED25519_PRIVATE_KEY }}
+        run: make package-release
+
+      - name: Upload release repository to S3
+        run: |
+          aws s3 sync "dist/s3/forge/updates/${{ inputs.channel }}" \
+            "s3://${{ inputs.s3_bucket }}/${{ inputs.s3_prefix }}/updates/${{ inputs.channel }}" \
+            --delete
+
+      - name: Print published URL
+        run: |
+          echo "Published updates URL:"
+          echo "https://${{ inputs.s3_bucket }}.s3.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.s3_prefix }}/updates"

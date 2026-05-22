@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "channel": "dev",
+  "latest": "0.3.0-dev.1",
+  "minimum_supported": "0.1.0",
+  "versions": [
+    "0.3.0-dev.1",
+    "0.3.0-beta.1",
+    "0.2.0"
+  ]
+}

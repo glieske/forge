@@ -1,0 +1,44 @@
+# Build outputs
+bin/
+dist/
+coverage/
+*.out
+*.test
+
+# Local caches
+.cache/
+*.cache
+
+# Go workspace files kept local unless explicitly adopted
+go.work
+go.work.sum
+
+# Release/update leftovers
+*.new
+*.tmp
+*.sig.tmp
+checksums.txt.tmp
+
+# Example plugin local binaries
+examples/plugins/connect/forge-connect
+examples/plugins/connect/forge-connect.exe
+examples/plugins/connect/dist/
+
+# Local configuration and secrets
+.env
+.env.*
+*.local
+config.toml
+secrets.toml
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Tool output
+trivy-results.sarif
+
+# Keep generated templates and placeholders in examples tracked.

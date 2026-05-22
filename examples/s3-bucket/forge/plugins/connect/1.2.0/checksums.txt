@@ -1,0 +1,5 @@
+REPLACE_WITH_SHA256  forge-connect_darwin_arm64.tar.gz
+REPLACE_WITH_SHA256  forge-connect_darwin_amd64.tar.gz
+REPLACE_WITH_SHA256  forge-connect_linux_arm64.tar.gz
+REPLACE_WITH_SHA256  forge-connect_linux_amd64.tar.gz
+REPLACE_WITH_SHA256  forge-connect_windows_amd64.zip
