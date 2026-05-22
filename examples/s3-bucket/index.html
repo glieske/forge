@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>forge repository</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --accent: #2563eb;
+        --border: #8b949e55;
+      }
+
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+        margin: 0;
+        padding: 48px 24px;
+      }
+
+      main {
+        max-width: 920px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        font-size: 2rem;
+        margin: 0 0 8px;
+      }
+
+      h2 {
+        margin-top: 32px;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      pre {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow-x: auto;
+        padding: 16px;
+      }
+
+      ul {
+        padding-left: 22px;
+      }
+
+      .muted {
+        opacity: 0.72;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>forge repository</h1>
+      <p class="muted">Static plugin and update repository layout for the forge CLI.</p>
+
+      <h2>Configure forge</h2>
+      <pre><code>forge config set repositories.plugins_url https://bucket.example.com/forge/plugins
+forge config set repositories.updates_url https://bucket.example.com/forge/updates
+forge self-update channel stable</code></pre>
+
+      <h2>Repository indexes</h2>
+      <ul>
+        <li><a href="forge/plugins/index.json">Plugin index</a></li>
+        <li><a href="forge/plugins/connect/index.json">connect plugin versions</a></li>
+        <li><a href="forge/plugins/connect/1.2.0/manifest.toml">connect 1.2.0 manifest</a></li>
+        <li><a href="forge/updates/stable/index.json">Stable update channel</a></li>
+        <li><a href="forge/updates/beta/index.json">Beta update channel</a></li>
+        <li><a href="forge/updates/dev/index.json">Dev update channel</a></li>
+      </ul>
+
+      <h2>Expected layout</h2>
+      <pre><code>forge/
+  plugins/
+    index.json
+    &lt;plugin-name&gt;/
+      index.json
+      &lt;semver&gt;/
+        manifest.toml
+        forge-&lt;plugin&gt;_&lt;os&gt;_&lt;arch&gt;.tar.gz
+        forge-&lt;plugin&gt;_&lt;os&gt;_&lt;arch&gt;.zip
+        checksums.txt
+        checksums.txt.sig
+  updates/
+    &lt;channel&gt;/
+      index.json
+      &lt;semver&gt;/
+        forge_&lt;os&gt;_&lt;arch&gt;.tar.gz
+        forge_&lt;os&gt;_&lt;arch&gt;.zip
+        checksums.txt
+        checksums.txt.sig</code></pre>
+    </main>
+  </body>
+</html>
