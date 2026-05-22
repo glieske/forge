@@ -37,6 +37,10 @@ func (m Manager) Available(ctx context.Context) (repo.PluginIndex, error) {
 }
 
 func (m Manager) Install(ctx context.Context, name, version, channel string) error {
+	return m.install(ctx, name, version, channel, map[string]bool{})
+}
+
+func (m Manager) install(ctx context.Context, name, version, channel string, visiting map[string]bool) error {
 	if channel == "" {
 		channel = m.Config.Repositories.Channel
 	}
@@ -50,8 +54,32 @@ func (m Manager) Install(ctx context.Context, name, version, channel string) err
 	if version == "" {
 		return fmt.Errorf("no version for plugin %s on channel %s", name, channel)
 	}
+	key := name + "@" + version
+	if visiting[key] {
+		return fmt.Errorf("plugin dependency cycle detected at %s", key)
+	}
+	visiting[key] = true
+	defer delete(visiting, key)
+
 	pkgName := packageName(name, version, runtime.GOOS, runtime.GOARCH)
 	base := filepath.ToSlash(filepath.Join(name, version))
+	manifestBytes, err := m.Repo.GetBytes(ctx, base+"/manifest.toml")
+	if err != nil {
+		return err
+	}
+	manifest, err := DecodeManifest(manifestBytes)
+	if err != nil {
+		return err
+	}
+	if manifest.Name != name {
+		return fmt.Errorf("manifest name %q does not match requested plugin %q", manifest.Name, name)
+	}
+	if manifest.Version != version {
+		return fmt.Errorf("manifest version %q does not match requested version %q", manifest.Version, version)
+	}
+	if err := m.installDependencies(ctx, manifest, channel, visiting); err != nil {
+		return err
+	}
 	pkg, err := m.Repo.GetBytes(ctx, base+"/"+pkgName)
 	if err != nil {
 		return err
@@ -74,14 +102,6 @@ func (m Manager) Install(ctx context.Context, name, version, channel string) err
 			return err
 		}
 	}
-	manifestBytes, err := m.Repo.GetBytes(ctx, base+"/manifest.toml")
-	if err != nil {
-		return err
-	}
-	manifest, err := DecodeManifest(manifestBytes)
-	if err != nil {
-		return err
-	}
 	dest := filepath.Join(m.Paths.PluginDir, name, "versions", version)
 	if err := os.RemoveAll(dest); err != nil {
 		return err
@@ -96,6 +116,80 @@ func (m Manager) Install(ctx context.Context, name, version, channel string) err
 		return err
 	}
 	return m.activate(name, version)
+}
+
+func (m Manager) installDependencies(ctx context.Context, manifest Manifest, channel string, visiting map[string]bool) error {
+	for _, dep := range manifest.Dependencies {
+		depChannel := dep.Channel
+		if depChannel == "" {
+			depChannel = channel
+		}
+		installed, err := m.Info(dep.Name)
+		if err == nil && dependencySatisfied(installed.Version, dep.Version) {
+			continue
+		}
+		if err == nil && dep.Optional {
+			continue
+		}
+		if err != nil && dep.Optional {
+			continue
+		}
+		depVersion, err := m.resolveDependencyVersion(ctx, dep.Name, dep.Version, depChannel)
+		if err != nil {
+			return fmt.Errorf("resolve dependency %s for %s: %w", dep.Name, manifest.Name, err)
+		}
+		if err := m.install(ctx, dep.Name, depVersion, depChannel, visiting); err != nil {
+			return fmt.Errorf("install dependency %s for %s: %w", dep.Name, manifest.Name, err)
+		}
+	}
+	return nil
+}
+
+func (m Manager) resolveDependencyVersion(ctx context.Context, name, constraint, channel string) (string, error) {
+	versions, err := m.Repo.PluginVersions(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	if constraint == "" {
+		if version := versions.Channels[channel]; version != "" {
+			return version, nil
+		}
+		return LatestVersion(versions.Versions)
+	}
+	c, err := semver.NewConstraint(constraint)
+	if err != nil {
+		return "", err
+	}
+	var matches []*semver.Version
+	for _, raw := range versions.Versions {
+		v, err := semver.NewVersion(raw)
+		if err != nil {
+			return "", err
+		}
+		if c.Check(v) {
+			matches = append(matches, v)
+		}
+	}
+	sort.Sort(semver.Collection(matches))
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no version of %s satisfies %q", name, constraint)
+	}
+	return matches[len(matches)-1].Original(), nil
+}
+
+func dependencySatisfied(version, constraint string) bool {
+	if constraint == "" {
+		return true
+	}
+	v, err := semver.NewVersion(version)
+	if err != nil {
+		return false
+	}
+	c, err := semver.NewConstraint(constraint)
+	if err != nil {
+		return false
+	}
+	return c.Check(v)
 }
 
 func (m Manager) Update(ctx context.Context, name string) error {
@@ -174,8 +268,13 @@ func (m Manager) Command(ctx context.Context, name string, args []string, noInte
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = m.pluginEnv(item)
+	return cmd, nil
+}
+
+func (m Manager) pluginEnv(item Installed) []string {
 	globals, _ := json.Marshal(m.Config.Globals)
-	cmd.Env = append(os.Environ(),
+	return append(os.Environ(),
 		"FORGE_PLUGIN_NAME="+item.Name,
 		"FORGE_PLUGIN_VERSION="+item.Version,
 		"FORGE_CONFIG_PATH="+m.Paths.ConfigPath,
@@ -184,7 +283,6 @@ func (m Manager) Command(ctx context.Context, name string, args []string, noInte
 		"FORGE_SECRETS_MODE="+m.Config.Security.SecretsBackend,
 		"FORGE_GLOBAL_CONFIG_JSON="+string(globals),
 	)
-	return cmd, nil
 }
 
 func (m Manager) activate(name, version string) error {

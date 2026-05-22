@@ -165,6 +165,15 @@ func (s *runtimeState) pluginCommand() *cobra.Command {
 		for _, c := range item.Manifest.Commands {
 			fmt.Fprintf(cmd.OutOrStdout(), "command: %s\t%s\n", c.Name, c.Description)
 		}
+		desc, err := s.pluginManager().Describe(cmd.Context(), args[0])
+		if err == nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "capabilities: %s\n", strings.Join(desc.Capabilities, ","))
+			for _, c := range desc.Commands {
+				if len(c.Examples) > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "example: %s\n", c.Examples[0])
+				}
+			}
+		}
 		return nil
 	}})
 	return cmd

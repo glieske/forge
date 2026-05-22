@@ -27,4 +27,14 @@ When installed through `forge`, users run:
 forge connect db stage
 ```
 
+Optional plugin protocol:
+
+```sh
+./forge-connect --forge-describe
+./forge-connect --forge-config-schema
+./forge-connect --forge-complete service d
+```
+
+These commands print JSON to stdout. `forge` can use them for richer TUI descriptions, generated settings forms, and completions without requiring `hashicorp/go-plugin` or an RPC server.
+
 The matching manifest template is `manifest.toml`.

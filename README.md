@@ -19,6 +19,7 @@ The plugin itself is a separate executable (`forge-connect`) managed by `forge`.
 
 - CLI and terminal UI for Linux, macOS, and Windows.
 - Plugin discovery, installation, update, removal, and command routing.
+- Plugin-to-plugin dependencies with SemVer constraints.
 - Static HTTPS/S3 plugin repository, no AWS SDK required.
 - Self-update repository with `stable`, `beta`, and `dev` channels.
 - TOML global configuration shared with plugins.
@@ -126,6 +127,28 @@ Package plugin artifacts for the sample S3 layout:
 ```sh
 VERSION=1.2.0 ./package.sh
 ```
+
+Plugins can declare dependencies in `manifest.toml`:
+
+```toml
+[[dependencies]]
+name = "aws"
+version = ">=1.0.0 <2.0.0"
+channel = "stable"
+optional = true
+```
+
+Required dependencies are installed before the requested plugin. Optional dependencies are used when already present or skipped when unavailable.
+
+Plugins may also implement an optional JSON-over-stdout protocol:
+
+```sh
+forge-connect --forge-describe
+forge-connect --forge-config-schema
+forge-connect --forge-complete service d
+```
+
+This gives `forge` richer descriptions, config schemas, and completions while keeping plugins as ordinary executables. No RPC runtime is required.
 
 ## Development
 

@@ -14,8 +14,16 @@ type Manifest struct {
 	Description     string        `toml:"description"`
 	Entrypoint      string        `toml:"entrypoint"`
 	MinForgeVersion string        `toml:"min_forge_version"`
+	Dependencies    []Dependency  `toml:"dependencies"`
 	Commands        []CommandSpec `toml:"commands"`
 	Config          []ConfigSpec  `toml:"config"`
+}
+
+type Dependency struct {
+	Name     string `toml:"name"`
+	Version  string `toml:"version"`
+	Channel  string `toml:"channel"`
+	Optional bool   `toml:"optional"`
 }
 
 type CommandSpec struct {
@@ -74,6 +82,14 @@ func (m Manifest) Validate() error {
 	}
 	if m.Entrypoint == "" {
 		return fmt.Errorf("manifest entrypoint is required")
+	}
+	for _, dep := range m.Dependencies {
+		if dep.Name == "" {
+			return fmt.Errorf("dependency name is required")
+		}
+		if dep.Name == m.Name {
+			return fmt.Errorf("plugin %s cannot depend on itself", m.Name)
+		}
 	}
 	for _, cmd := range m.Commands {
 		if cmd.Name == "" {

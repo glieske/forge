@@ -59,6 +59,20 @@ Every package must be listed in `checksums.txt`:
 
 The sample files in this directory are templates. Replace placeholder checksums, signatures, versions, and bucket URLs during release publishing.
 
+## Plugin Dependencies
+
+Plugin manifests may declare dependencies on other plugins:
+
+```toml
+[[dependencies]]
+name = "aws"
+version = ">=1.0.0 <2.0.0"
+channel = "stable"
+optional = true
+```
+
+`version` uses SemVer constraints from `Masterminds/semver`. If `channel` is omitted, the active install channel is used. Required dependencies are installed first; optional dependencies are skipped when missing or incompatible.
+
 ## GitHub Actions Deployment
 
 The `CI` workflow can publish update artifacts through `workflow_dispatch`.

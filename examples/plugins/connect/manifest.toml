@@ -5,6 +5,12 @@ description = "Open developer connectivity tunnels"
 entrypoint = "forge-connect"
 min_forge_version = "0.1.0"
 
+[[dependencies]]
+name = "aws"
+version = ">=1.0.0 <2.0.0"
+channel = "stable"
+optional = true
+
 [[commands]]
 name = "connect"
 description = "Open a tunnel to an internal service"
