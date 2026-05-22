@@ -77,7 +77,7 @@ jobs:
         run: make fmt-check
 
       - name: Check shell scripts
-        run: sh -n scripts/dev.sh scripts/build-all.sh scripts/package-release.sh
+        run: sh -n scripts/dev.sh scripts/build-all.sh scripts/package-release.sh scripts/cosign-sign-release.sh scripts/checksum-release.sh
 
       - name: Vet
         run: make lint
@@ -175,12 +175,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ inputs.aws_region }}
 
-      - name: Build signed update repository
+      - name: Build update repository
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: make package-release
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.0.0
+
+      - name: Sign release artifacts with Cosign keyless OIDC
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: ./scripts/cosign-sign-release.sh
+
+      - name: Calculate and sign final checksums
         env:
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
           FORGE_ED25519_PRIVATE_KEY: ${{ secrets.FORGE_ED25519_PRIVATE_KEY }}
-        run: make package-release
+        run: ./scripts/checksum-release.sh
 
       - name: Upload release repository to S3
         run: |

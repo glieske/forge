@@ -57,6 +57,9 @@ func (m Manager) queryJSON(ctx context.Context, name string, args []string, targ
 	if err != nil {
 		return err
 	}
+	if err := m.requireTrusted(item); err != nil {
+		return err
+	}
 	qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	exe := filepath.Join(item.Current, platform.ExeName(item.Manifest.Entrypoint))

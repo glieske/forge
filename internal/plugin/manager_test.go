@@ -83,6 +83,73 @@ description = "Connect"
 	if len(items) != 1 || items[0].Name != "connect" || items[0].Version != "1.2.0" {
 		t.Fatalf("installed = %#v", items)
 	}
+	if !items[0].Trust.Trusted {
+		t.Fatalf("expected trusted plugin, got %#v", items[0].Trust)
+	}
+	if items[0].Trust.PublicKeyFingerprint == "" {
+		t.Fatalf("missing public key fingerprint: %#v", items[0].Trust)
+	}
+}
+
+func TestInstallPluginLoadsPublicKeyFromRepository(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageFile := packageName("connect", "1.2.0", runtime.GOOS, runtime.GOARCH)
+	archive := testTarGz(t, "forge-connect", "#!/usr/bin/env sh\nprintf ok\n")
+	checksums := fmt.Sprintf("%s  %s\n", security.SHA256(archive), packageFile)
+	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte(checksums)))
+	manifest := `
+schema = 1
+name = "connect"
+version = "1.2.0"
+description = "Connect"
+entrypoint = "forge-connect"
+`
+	publicKey := base64.StdEncoding.EncodeToString(pub)
+	client := repo.New("https://repo.example.test")
+	client.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/public-key.ed25519":
+			return response(http.StatusOK, publicKey+"\n"), nil
+		case "/connect/index.json":
+			return response(http.StatusOK, `{"schema":1,"name":"connect","versions":["1.2.0"],"channels":{"stable":"1.2.0"}}`), nil
+		case "/connect/1.2.0/" + packageFile:
+			return byteResponse(http.StatusOK, archive), nil
+		case "/connect/1.2.0/checksums.txt":
+			return response(http.StatusOK, checksums), nil
+		case "/connect/1.2.0/checksums.txt.sig":
+			return response(http.StatusOK, sig), nil
+		case "/connect/1.2.0/manifest.toml":
+			return response(http.StatusOK, manifest), nil
+		default:
+			return response(http.StatusNotFound, "not found"), nil
+		}
+	})}
+	root := t.TempDir()
+	mgr := Manager{
+		Paths: platform.Paths{
+			ConfigPath: filepath.Join(root, "config.toml"),
+			DataDir:    filepath.Join(root, "data"),
+			PluginDir:  filepath.Join(root, "data", "plugins"),
+		},
+		Config: config.Config{
+			Repositories: config.RepositoriesConfig{Channel: "stable"},
+			Security:     config.SecurityConfig{RequireChecksums: true, RequireSignatures: true},
+		},
+		Repo: client,
+	}
+	if err := mgr.Install(t.Context(), "connect", "", "stable"); err != nil {
+		t.Fatal(err)
+	}
+	item, err := mgr.Info("connect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !item.Trust.Trusted || item.Trust.PublicKeyFingerprint == "" {
+		t.Fatalf("trust = %#v", item.Trust)
+	}
 }
 
 func TestInstallPluginInstallsDependencies(t *testing.T) {
@@ -214,13 +281,62 @@ exit 2
 	if err := os.Symlink(filepath.Join("versions", "1.0.0"), filepath.Join(root, "data", "plugins", "echo", "current")); err != nil {
 		t.Fatal(err)
 	}
-	mgr := Manager{Paths: platform.Paths{PluginDir: filepath.Join(root, "data", "plugins")}}
+	mgr := Manager{
+		Paths:  platform.Paths{PluginDir: filepath.Join(root, "data", "plugins")},
+		Config: config.Config{Security: config.SecurityConfig{RequireSignatures: false}},
+	}
 	desc, err := mgr.Describe(t.Context(), "echo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if desc.Name != "echo" || len(desc.Capabilities) != 1 {
 		t.Fatalf("desc = %#v", desc)
+	}
+}
+
+func TestCommandRejectsUnsignedPluginWhenSignaturesRequired(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is unix-only")
+	}
+	root := t.TempDir()
+	current := filepath.Join(root, "data", "plugins", "echo", "versions", "1.0.0")
+	if err := os.MkdirAll(current, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(current, "manifest.toml"), []byte(`
+schema = 1
+name = "echo"
+version = "1.0.0"
+description = "Echo"
+entrypoint = "forge-echo"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(current, "forge-echo"), []byte("#!/usr/bin/env sh\nprintf nope\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "data", "plugins", "echo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("versions", "1.0.0"), filepath.Join(root, "data", "plugins", "echo", "current")); err != nil {
+		t.Fatal(err)
+	}
+	pub, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr := Manager{
+		Paths: platform.Paths{PluginDir: filepath.Join(root, "data", "plugins")},
+		Config: config.Config{Security: config.SecurityConfig{
+			RequireSignatures: true,
+			PublicKey:         base64.StdEncoding.EncodeToString(pub),
+		}},
+	}
+	if _, err := mgr.Command(t.Context(), "echo", nil, true); err == nil {
+		t.Fatal("expected unsigned plugin to be rejected")
+	}
+	if _, err := mgr.Describe(t.Context(), "echo"); err == nil {
+		t.Fatal("expected unsigned plugin introspection to be rejected")
 	}
 }
 

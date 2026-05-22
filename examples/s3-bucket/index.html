@@ -69,6 +69,7 @@ forge self-update channel stable</code></pre>
 
       <h2>Repository indexes</h2>
       <ul>
+        <li><a href="forge/plugins/public-key.ed25519">Plugin signing public key</a></li>
         <li><a href="forge/plugins/index.json">Plugin index</a></li>
         <li><a href="forge/plugins/connect/index.json">connect plugin versions</a></li>
         <li><a href="forge/plugins/connect/1.2.0/manifest.toml">connect 1.2.0 manifest</a></li>
@@ -80,6 +81,7 @@ forge self-update channel stable</code></pre>
       <h2>Expected layout</h2>
       <pre><code>forge/
   plugins/
+    public-key.ed25519
     index.json
     &lt;plugin-name&gt;/
       index.json
@@ -95,6 +97,8 @@ forge self-update channel stable</code></pre>
       &lt;semver&gt;/
         forge_&lt;os&gt;_&lt;arch&gt;.tar.gz
         forge_&lt;os&gt;_&lt;arch&gt;.zip
+        forge_&lt;os&gt;_&lt;arch&gt;.tar.gz.sigstore.json
+        forge_&lt;os&gt;_&lt;arch&gt;.zip.sigstore.json
         checksums.txt
         checksums.txt.sig</code></pre>
     </main>

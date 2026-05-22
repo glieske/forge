@@ -15,6 +15,7 @@ forge self-update channel stable
 ```text
 forge/
   plugins/
+    public-key.ed25519
     index.json
     <plugin-name>/
       index.json
@@ -30,6 +31,8 @@ forge/
       <semver>/
         forge_<os>_<arch>.tar.gz
         forge_<os>_<arch>.zip
+        forge_<os>_<arch>.tar.gz.sigstore.json
+        forge_<os>_<arch>.zip.sigstore.json
         checksums.txt
         checksums.txt.sig
 ```
@@ -53,7 +56,11 @@ Every package must be listed in `checksums.txt`:
 <sha256>  forge-connect_linux_amd64.tar.gz
 ```
 
-`checksums.txt.sig` is a base64-encoded Ed25519 signature of the raw `checksums.txt` file. `forge` verifies the signature using `security.public_key` from config.
+`public-key.ed25519` contains the base64-encoded Ed25519 public key used to verify plugin repository signatures. `security.public_key` in local config is optional; when set, it overrides this repository key.
+
+`checksums.txt.sig` is a base64-encoded Ed25519 signature of the raw `checksums.txt` file. `forge` verifies the signature using `security.public_key` from config, or `public-key.ed25519` from the plugin repository when the config value is empty.
+
+With default security settings, `forge` records verified signature metadata during installation and refuses to run plugins that do not have trust metadata. If `security.public_key` is configured later, already installed plugins must match that key fingerprint to run.
 
 ## Notes
 
@@ -95,7 +102,7 @@ Generate a key pair with:
 go run ./tools/generate-keypair
 ```
 
-Store `FORGE_ED25519_PRIVATE_KEY` as a GitHub secret. Put `FORGE_ED25519_PUBLIC_KEY` in `security.public_key` for clients.
+Store `FORGE_ED25519_PRIVATE_KEY` as a GitHub secret. Publish `FORGE_ED25519_PUBLIC_KEY` as `forge/plugins/public-key.ed25519`; clients may optionally set the same value as `security.public_key` to pin the key locally.
 
 AWS credentials can be provided either by repository secret `AWS_ROLE_TO_ASSUME` for OIDC, or by secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 
@@ -106,3 +113,19 @@ s3://<bucket>/<prefix>/updates/<channel>/
 ```
 
 Plugin artifacts should be published by the plugin release process using the layout shown above.
+
+Release artifacts are additionally signed with Cosign keyless signing in GitHub Actions. The workflow writes Sigstore bundles next to each archive, then calculates and signs final checksums:
+
+```text
+forge_linux_amd64.tar.gz
+forge_linux_amd64.tar.gz.sigstore.json
+```
+
+Verify a downloaded release artifact with:
+
+```sh
+cosign verify-blob forge_linux_amd64.tar.gz \
+  --bundle forge_linux_amd64.tar.gz.sigstore.json \
+  --certificate-identity=https://github.com/glieske/forge/.github/workflows/ci.yml@refs/heads/main \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```

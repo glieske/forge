@@ -25,6 +25,7 @@ The plugin itself is a separate executable (`forge-connect`) managed by `forge`.
 - TOML global configuration shared with plugins.
 - Secret storage through system keychain/keyring with file fallback.
 - SHA256 checksum and Ed25519 signature verification for downloaded artifacts.
+- Refuses to run plugins that were not installed from a signature verified by a known public key.
 - Fuzzy command and argument selection in the TUI.
 
 ## Installation
@@ -43,6 +44,18 @@ Before plugin discovery or self-update can work, configure repository URLs:
 ```sh
 forge config set repositories.plugins_url https://bucket.example.com/forge/plugins
 forge config set repositories.updates_url https://bucket.example.com/forge/updates
+```
+
+By default, plugin signature verification loads the trusted Ed25519 public key from the plugin repository:
+
+```text
+<plugins_url>/public-key.ed25519
+```
+
+Optionally pin/override that key locally:
+
+```sh
+forge config set security.public_key <base64-ed25519-public-key>
 ```
 
 For local development, run commands through:
@@ -177,18 +190,26 @@ Generate an Ed25519 key pair for signing release checksums:
 go run ./tools/generate-keypair
 ```
 
-Build signed self-update artifacts:
+Build self-update artifacts locally:
 
 ```sh
-VERSION=0.2.0 \
-CHANNEL=stable \
-FORGE_ED25519_PRIVATE_KEY=<base64-private-key> \
-make package-release
+VERSION=0.2.0 CHANNEL=stable make package-release
 ```
+
+In GitHub Actions, release order is: build archives, sign archives with Cosign keyless OIDC, then calculate final SHA256 checksums and sign `checksums.txt` with the configured Ed25519 key.
 
 ## CI And Security
 
-GitHub Actions runs formatting checks, `go vet`, tests, cross-compilation, `golangci-lint`, Trivy vulnerability scans, and S3 example validation. Manual workflow dispatch can publish signed update artifacts to a provided S3 bucket.
+GitHub Actions runs formatting checks, `go vet`, tests, cross-compilation, `golangci-lint`, Trivy vulnerability scans, and S3 example validation. Manual workflow dispatch can publish update artifacts to a provided S3 bucket. Release archives are signed with Cosign keyless signing through GitHub OIDC; after Cosign bundles are written, final checksums are calculated and `checksums.txt` is signed with the configured Ed25519 key.
+
+Verify a Cosign bundle:
+
+```sh
+cosign verify-blob forge_linux_amd64.tar.gz \
+  --bundle forge_linux_amd64.tar.gz.sigstore.json \
+  --certificate-identity=https://github.com/glieske/forge/.github/workflows/ci.yml@refs/heads/main \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
 
 Dependabot monitors Go modules and GitHub Actions.
 

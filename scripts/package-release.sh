@@ -11,11 +11,6 @@ if [ -z "$VERSION" ]; then
   exit 2
 fi
 
-if [ -z "${FORGE_ED25519_PRIVATE_KEY:-}" ]; then
-  echo "FORGE_ED25519_PRIVATE_KEY is required to sign checksums.txt" >&2
-  exit 2
-fi
-
 version_dir="$OUT_ROOT/forge/updates/$CHANNEL/$VERSION"
 rm -rf "$version_dir"
 mkdir -p "$version_dir"
@@ -51,9 +46,6 @@ build_one linux arm64
 build_one darwin amd64
 build_one darwin arm64
 build_one windows amd64
-
-(cd "$version_dir" && shasum -a 256 forge_* > checksums.txt)
-go run ./tools/sign-checksums "$version_dir/checksums.txt" "$version_dir/checksums.txt.sig"
 
 channel_dir="$OUT_ROOT/forge/updates/$CHANNEL"
 mkdir -p "$channel_dir"

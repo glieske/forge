@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/Masterminds/semver/v3"
@@ -30,6 +31,15 @@ type Installed struct {
 	Version  string
 	Current  string
 	Manifest Manifest
+	Trust    TrustMetadata
+}
+
+type TrustMetadata struct {
+	Trusted              bool   `toml:"trusted"`
+	PublicKeyFingerprint string `toml:"public_key_fingerprint"`
+	Package              string `toml:"package"`
+	PackageSHA256        string `toml:"package_sha256"`
+	ChecksumsSHA256      string `toml:"checksums_sha256"`
 }
 
 func (m Manager) Available(ctx context.Context) (repo.PluginIndex, error) {
@@ -88,20 +98,33 @@ func (m Manager) install(ctx context.Context, name, version, channel string, vis
 	if err != nil {
 		return err
 	}
+	trust := TrustMetadata{Package: pkgName}
 	if m.Config.Security.RequireSignatures {
+		publicKey, err := m.signingPublicKey(ctx)
+		if err != nil {
+			return err
+		}
 		sig, err := m.Repo.GetBytes(ctx, base+"/checksums.txt.sig")
 		if err != nil {
 			return err
 		}
-		if err := security.VerifyEd25519(m.Config.Security.PublicKey, checksums, sig); err != nil {
+		if err := security.VerifyEd25519(publicKey, checksums, sig); err != nil {
 			return err
 		}
+		fingerprint, err := security.PublicKeyFingerprint(publicKey)
+		if err != nil {
+			return err
+		}
+		trust.Trusted = true
+		trust.PublicKeyFingerprint = fingerprint
 	}
 	if m.Config.Security.RequireChecksums {
 		if err := security.VerifyChecksum(pkg, string(checksums), pkgName); err != nil {
 			return err
 		}
 	}
+	trust.PackageSHA256 = security.SHA256(pkg)
+	trust.ChecksumsSHA256 = security.SHA256(checksums)
 	dest := filepath.Join(m.Paths.PluginDir, name, "versions", version)
 	if err := os.RemoveAll(dest); err != nil {
 		return err
@@ -110,6 +133,9 @@ func (m Manager) install(ctx context.Context, name, version, channel string, vis
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dest, "manifest.toml"), manifestBytes, 0o644); err != nil {
+		return err
+	}
+	if err := writeTrust(filepath.Join(dest, "trust.toml"), trust); err != nil {
 		return err
 	}
 	if err := os.Chmod(filepath.Join(dest, platform.ExeName(manifest.Entrypoint)), 0o755); err != nil && runtime.GOOS != "windows" {
@@ -260,6 +286,9 @@ func (m Manager) Command(ctx context.Context, name string, args []string, noInte
 	if err != nil {
 		return nil, err
 	}
+	if err := m.requireTrusted(item); err != nil {
+		return nil, err
+	}
 	if err := validateArgs(item.Manifest, args, noInteractive); err != nil {
 		return nil, err
 	}
@@ -328,7 +357,63 @@ func (m Manager) loadInstalled(name string) (Installed, error) {
 	if err != nil {
 		return Installed{}, err
 	}
-	return Installed{Name: manifest.Name, Version: manifest.Version, Current: realCurrent, Manifest: manifest}, nil
+	trust, err := loadTrust(filepath.Join(realCurrent, "trust.toml"))
+	if err != nil && !os.IsNotExist(err) {
+		return Installed{}, err
+	}
+	return Installed{Name: manifest.Name, Version: manifest.Version, Current: realCurrent, Manifest: manifest, Trust: trust}, nil
+}
+
+func (m Manager) requireTrusted(item Installed) error {
+	if !m.Config.Security.RequireSignatures {
+		return nil
+	}
+	if item.Trust.Trusted == false {
+		return fmt.Errorf("plugin %s is not trusted: missing verified signature metadata", item.Name)
+	}
+	if m.Config.Security.PublicKey == "" {
+		if item.Trust.PublicKeyFingerprint == "" {
+			return fmt.Errorf("plugin %s is not trusted: missing signing key fingerprint", item.Name)
+		}
+		return nil
+	}
+	fingerprint, err := security.PublicKeyFingerprint(m.Config.Security.PublicKey)
+	if err != nil {
+		return err
+	}
+	if item.Trust.PublicKeyFingerprint != fingerprint {
+		return fmt.Errorf("plugin %s is not trusted: signing key fingerprint mismatch", item.Name)
+	}
+	return nil
+}
+
+func (m Manager) signingPublicKey(ctx context.Context) (string, error) {
+	if m.Config.Security.PublicKey != "" {
+		return m.Config.Security.PublicKey, nil
+	}
+	key, err := m.Repo.GetBytes(ctx, "public-key.ed25519")
+	if err != nil {
+		return "", fmt.Errorf("load signing public key from plugin repository: %w", err)
+	}
+	return strings.TrimSpace(string(key)), nil
+}
+
+func writeTrust(path string, trust TrustMetadata) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if err := toml.NewEncoder(f).Encode(trust); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func loadTrust(path string) (TrustMetadata, error) {
+	var trust TrustMetadata
+	_, err := toml.DecodeFile(path, &trust)
+	return trust, err
 }
 
 func packageName(name, version, goos, goarch string) string {

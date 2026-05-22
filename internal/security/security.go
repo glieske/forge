@@ -15,6 +15,18 @@ func SHA256(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func PublicKeyFingerprint(publicKeyBase64 string) (string, error) {
+	pub, err := base64.StdEncoding.DecodeString(publicKeyBase64)
+	if err != nil {
+		return "", err
+	}
+	if len(pub) != ed25519.PublicKeySize {
+		return "", fmt.Errorf("invalid public key length %d", len(pub))
+	}
+	sum := sha256.Sum256(pub)
+	return hex.EncodeToString(sum[:]), nil
+}
+
 func ExpectedChecksum(checksums, filename string) (string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(checksums))
 	for scanner.Scan() {
