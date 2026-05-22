@@ -34,10 +34,10 @@ build_one() {
 
   if [ "$goos" = "windows" ]; then
     package="forge_${goos}_${goarch}.zip"
-    (cd "$work" && zip -q "../../s3/forge/updates/$CHANNEL/$VERSION/$package" "$exe")
+    (cd "$work" && zip -q "$version_dir/$package" "$exe")
   else
     package="forge_${goos}_${goarch}.tar.gz"
-    (cd "$work" && tar -czf "../../s3/forge/updates/$CHANNEL/$VERSION/$package" "$exe")
+    (cd "$work" && tar -czf "$version_dir/$package" "$exe")
   fi
 }
 
@@ -49,16 +49,6 @@ build_one windows amd64
 
 channel_dir="$OUT_ROOT/forge/updates/$CHANNEL"
 mkdir -p "$channel_dir"
-cat > "$channel_dir/index.json" <<EOF
-{
-  "schema": 1,
-  "channel": "$CHANNEL",
-  "latest": "$VERSION",
-  "minimum_supported": "0.1.0",
-  "versions": [
-    "$VERSION"
-  ]
-}
-EOF
+go run ./tools/update-release-index "$channel_dir/index.json" "$CHANNEL" "$VERSION"
 
 echo "release repository written to $OUT_ROOT/forge/updates/$CHANNEL"

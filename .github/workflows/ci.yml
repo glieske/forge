@@ -175,6 +175,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ inputs.aws_region }}
 
+      - name: Download existing update index
+        run: |
+          mkdir -p "dist/s3/forge/updates/${{ inputs.channel }}"
+          aws s3 cp \
+            "s3://${{ inputs.s3_bucket }}/${{ inputs.s3_prefix }}/updates/${{ inputs.channel }}/index.json" \
+            "dist/s3/forge/updates/${{ inputs.channel }}/index.json" || true
+
       - name: Build update repository
         env:
           VERSION: ${{ inputs.version }}
@@ -200,8 +207,7 @@ jobs:
       - name: Upload release repository to S3
         run: |
           aws s3 sync "dist/s3/forge/updates/${{ inputs.channel }}" \
-            "s3://${{ inputs.s3_bucket }}/${{ inputs.s3_prefix }}/updates/${{ inputs.channel }}" \
-            --delete
+            "s3://${{ inputs.s3_bucket }}/${{ inputs.s3_prefix }}/updates/${{ inputs.channel }}"
 
       - name: Print published URL
         run: |
