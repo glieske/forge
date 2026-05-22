@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -51,23 +52,25 @@ func (i item) Description() string { return i.desc }
 func (i item) FilterValue() string { return i.title + " " + i.desc }
 
 type Model struct {
-	opts       Options
-	screen     screen
-	previous   screen
-	list       list.Model
-	input      textinput.Model
-	inputTitle string
-	inputKey   string
-	inputScope string
-	inputStep  int
-	secretKey  string
-	status     string
-	err        string
-	installed  []plugin.Installed
-	available  []repo.PluginSummary
-	wizard     *commandWizard
-	width      int
-	height     int
+	opts             Options
+	screen           screen
+	previous         screen
+	list             list.Model
+	input            textinput.Model
+	inputTitle       string
+	inputKey         string
+	inputScope       string
+	inputPlugin      string
+	inputPluginField plugin.ConfigSpec
+	inputStep        int
+	secretKey        string
+	status           string
+	err              string
+	installed        []plugin.Installed
+	available        []repo.PluginSummary
+	wizard           *commandWizard
+	width            int
+	height           int
 }
 
 type commandWizard struct {
@@ -75,6 +78,11 @@ type commandWizard struct {
 	command plugin.CommandSpec
 	args    []string
 	nextArg int
+}
+
+type pluginConfigSelection struct {
+	plugin plugin.Installed
+	field  plugin.ConfigSpec
 }
 
 type installedMsg struct {
@@ -108,7 +116,9 @@ func New(opts Options) Model {
 	l.SetFilteringEnabled(true)
 	in := textinput.New()
 	in.CharLimit = 4096
-	return Model{opts: opts, screen: screenDashboard, list: l, input: in}
+	m := Model{opts: opts, screen: screenDashboard, list: l, input: in}
+	m.showDashboard()
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -138,6 +148,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showDashboard()
 			return m, nil
 		case "r":
+			if strings.TrimSpace(m.opts.Config.Repositories.PluginsURL) == "" {
+				return m, m.loadInstalled()
+			}
 			return m, tea.Batch(m.loadInstalled(), m.loadAvailable())
 		case "x":
 			if m.screen == screenInstalled {
@@ -155,7 +168,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 		} else {
 			m.installed = msg.items
-			if m.screen == screenInstalled || m.screen == screenCommands {
+			if m.screen == screenDashboard || m.screen == screenInstalled || m.screen == screenCommands {
 				m.refreshScreen()
 			}
 		}
@@ -174,6 +187,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err = ""
 			m.status = msg.status
+		}
+		if m.screen == screenInput {
+			m.screen = m.previous
+			m.input.SetValue("")
+			m.refreshScreen()
+		}
+		if strings.TrimSpace(m.opts.Config.Repositories.PluginsURL) == "" {
+			return m, m.loadInstalled()
 		}
 		return m, tea.Batch(m.loadInstalled(), m.loadAvailable())
 	case runDoneMsg:
@@ -209,13 +230,17 @@ func (m Model) View() string {
 func (m *Model) showDashboard() {
 	m.screen = screenDashboard
 	m.list.Title = "Dashboard"
-	items := []list.Item{
+	items := make([]list.Item, 0, 8)
+	for _, missing := range config.MissingRepositorySettings(m.opts.Config) {
+		items = append(items, item{"Configuration warning", "Missing " + missing + " - open Config > Global settings to set it", "config", nil})
+	}
+	items = append(items,
 		item{"Installed plugins", fmt.Sprintf("%d installed", len(m.installed)), "installed", nil},
 		item{"Available plugins", fmt.Sprintf("%d loaded from repository", len(m.available)), "available", nil},
 		item{"Commands", "Fuzzy select an installed plugin command", "commands", nil},
 		item{"Config", "Edit global settings", "config", nil},
 		item{"Secrets", "Set or delete secrets", "secrets", nil},
-	}
+	)
 	m.list.SetItems(items)
 }
 
@@ -235,6 +260,12 @@ func (m *Model) showInstalled() {
 func (m *Model) showAvailable() {
 	m.screen = screenAvailable
 	m.list.Title = "Available Plugins"
+	if strings.TrimSpace(m.opts.Config.Repositories.PluginsURL) == "" {
+		m.list.SetItems([]list.Item{
+			item{"Missing plugins repository", "Set repositories.plugins_url in Config > Global settings", "config-global", nil},
+		})
+		return
+	}
 	items := make([]list.Item, 0, len(m.available))
 	for _, p := range m.available {
 		items = append(items, item{p.Name, p.Latest + " - " + p.Description, "install", p})
@@ -263,7 +294,17 @@ func (m *Model) showCommands() {
 func (m *Model) showConfig() {
 	m.screen = screenConfig
 	m.list.Title = "Config"
+	m.list.SetItems([]list.Item{
+		item{"Global settings", "Repository URLs, channel, UI, security, and shared globals", "config-global", nil},
+		item{"Plugin settings", "Settings declared by installed plugin manifests", "config-plugins", nil},
+	})
+}
+
+func (m *Model) showGlobalConfig() {
+	m.screen = screenConfig
+	m.list.Title = "Global Settings"
 	items := []list.Item{
+		item{"config file", m.opts.Paths.ConfigPath, "noop", nil},
 		configItem("repositories.plugins_url", m.opts.Config.Repositories.PluginsURL),
 		configItem("repositories.updates_url", m.opts.Config.Repositories.UpdatesURL),
 		configItem("repositories.channel", m.opts.Config.Repositories.Channel),
@@ -279,6 +320,44 @@ func (m *Model) showConfig() {
 	sort.Strings(keys)
 	for _, key := range keys {
 		items = append(items, configItem("globals."+key, strings.Join(m.opts.Config.Globals[key], ",")))
+	}
+	m.list.SetItems(items)
+}
+
+func (m *Model) showPluginConfigList() {
+	m.screen = screenConfig
+	m.list.Title = "Plugin Settings"
+	items := make([]list.Item, 0, len(m.installed))
+	for _, p := range m.installed {
+		desc := fmt.Sprintf("%d settings declared", len(p.Manifest.Config))
+		items = append(items, item{p.Name, desc, "config-plugin", p})
+	}
+	if len(items) == 0 {
+		items = append(items, item{"No installed plugins", "Install a plugin with configurable settings first", "noop", nil})
+	}
+	m.list.SetItems(items)
+}
+
+func (m *Model) showPluginConfig(pluginItem plugin.Installed) {
+	m.screen = screenConfig
+	m.list.Title = "Plugin Settings: " + pluginItem.Name
+	items := make([]list.Item, 0, len(pluginItem.Manifest.Config))
+	for _, field := range pluginItem.Manifest.Config {
+		value := config.GetPlugin(m.opts.Config, pluginItem.Name, field.Key)
+		if field.Secret {
+			value = "secret stored outside config"
+		}
+		if value == "" && !field.Secret {
+			value = "(unset)"
+		}
+		desc := fmt.Sprintf("%s - %s", field.Type, value)
+		if field.Description != "" {
+			desc += " - " + field.Description
+		}
+		items = append(items, item{field.Key, desc, "config-plugin-set", pluginConfigSelection{plugin: pluginItem, field: field}})
+	}
+	if len(items) == 0 {
+		items = append(items, item{"No settings", "This plugin does not declare configurable fields", "noop", nil})
 	}
 	m.list.SetItems(items)
 }
@@ -319,11 +398,20 @@ func (m Model) activateSelected() (tea.Model, tea.Cmd) {
 		m.showInstalled()
 	case "available":
 		m.showAvailable()
+		if strings.TrimSpace(m.opts.Config.Repositories.PluginsURL) == "" {
+			return m, nil
+		}
 		return m, m.loadAvailable()
 	case "commands":
 		m.showCommands()
 	case "config":
 		m.showConfig()
+	case "config-global":
+		m.showGlobalConfig()
+	case "config-plugins":
+		m.showPluginConfigList()
+	case "config-plugin":
+		m.showPluginConfig(selected.value.(plugin.Installed))
 	case "secrets":
 		m.showSecrets()
 	case "install":
@@ -347,8 +435,28 @@ func (m Model) activateSelected() (tea.Model, tea.Cmd) {
 		m.previous = screenConfig
 		m.screen = screenInput
 		m.inputKey = selected.value.(string)
+		m.inputPlugin = ""
+		m.inputScope = ""
 		current, _ := config.Get(m.opts.Config, m.inputKey)
 		m.inputTitle = "Set " + m.inputKey
+		m.input.SetValue(current)
+		m.input.Focus()
+	case "config-plugin-set":
+		selection := selected.value.(pluginConfigSelection)
+		m.previous = screenConfig
+		m.screen = screenInput
+		m.inputKey = ""
+		m.inputScope = ""
+		m.inputPlugin = selection.plugin.Name
+		m.inputPluginField = selection.field
+		current := config.GetPlugin(m.opts.Config, selection.plugin.Name, selection.field.Key)
+		if selection.field.Secret {
+			current = ""
+		}
+		m.inputTitle = "Set " + selection.plugin.Name + "." + selection.field.Key
+		if selection.field.Secret {
+			m.inputTitle += " (secret)"
+		}
 		m.input.SetValue(current)
 		m.input.Focus()
 	case "secret-set-global":
@@ -386,6 +494,27 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				err := config.Save(m.opts.Paths.ConfigPath, cfg)
 				return actionMsg{status: "saved " + key, err: err}
+			}
+		case m.inputPlugin != "":
+			pluginName := m.inputPlugin
+			field := m.inputPluginField
+			if field.Secret {
+				return m, func() tea.Msg {
+					err := m.opts.Secrets.Set("plugin:"+pluginName, field.Key, value)
+					return actionMsg{status: "saved secret " + pluginName + "." + field.Key, err: err}
+				}
+			}
+			if err := validateConfigValue(field, value); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			cfg := m.opts.Config
+			config.SetPlugin(&cfg, pluginName, field.Key, value)
+			m.opts.Config = cfg
+			m.opts.Plugins.Config = cfg
+			return m, func() tea.Msg {
+				err := config.Save(m.opts.Paths.ConfigPath, cfg)
+				return actionMsg{status: "saved " + pluginName + "." + field.Key, err: err}
 			}
 		case m.wizard != nil:
 			m.wizard.args = append(m.wizard.args, value)
@@ -483,6 +612,8 @@ func (m *Model) startSecretInput(scope, key, title string, step int) {
 	m.inputScope = scope
 	m.secretKey = key
 	m.inputKey = ""
+	m.inputPlugin = ""
+	m.inputPluginField = plugin.ConfigSpec{}
 	m.inputStep = step
 	m.inputTitle = title
 	m.input.SetValue("")
@@ -529,6 +660,9 @@ func (m Model) loadInstalled() tea.Cmd {
 
 func (m Model) loadAvailable() tea.Cmd {
 	return func() tea.Msg {
+		if strings.TrimSpace(m.opts.Config.Repositories.PluginsURL) == "" {
+			return availableMsg{err: config.RequirePluginsURL(m.opts.Config)}
+		}
 		idx, err := m.opts.Plugins.Available(context.Background())
 		return availableMsg{items: idx.Plugins, err: err}
 	}
@@ -536,6 +670,23 @@ func (m Model) loadAvailable() tea.Cmd {
 
 func configItem(key, value string) list.Item {
 	return item{key, value, "config-set", key}
+}
+
+func validateConfigValue(field plugin.ConfigSpec, value string) error {
+	switch field.Type {
+	case "", "string", "secret_string":
+		return nil
+	case "bool":
+		_, err := strconv.ParseBool(value)
+		return err
+	case "int":
+		_, err := strconv.Atoi(value)
+		return err
+	case "string_list":
+		return nil
+	default:
+		return fmt.Errorf("unsupported config type %q for %s", field.Type, field.Key)
+	}
 }
 
 func splitCSV(value string) []string {

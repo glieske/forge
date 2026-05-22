@@ -133,6 +133,9 @@ func (s *runtimeState) pluginCommand() *cobra.Command {
 		return nil
 	}})
 	cmd.AddCommand(&cobra.Command{Use: "available", Short: "List available plugins", RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequirePluginsURL(s.cfg); err != nil {
+			return err
+		}
 		idx, err := s.pluginManager().Available(cmd.Context())
 		if err != nil {
 			return err
@@ -146,12 +149,18 @@ func (s *runtimeState) pluginCommand() *cobra.Command {
 	}})
 	var version, channel string
 	install := &cobra.Command{Use: "install <name>", Short: "Install a plugin", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequirePluginsURL(s.cfg); err != nil {
+			return err
+		}
 		return s.pluginManager().Install(cmd.Context(), args[0], version, channel)
 	}}
 	install.Flags().StringVar(&version, "version", "", "plugin version")
 	install.Flags().StringVar(&channel, "channel", "", "release channel")
 	cmd.AddCommand(install)
 	cmd.AddCommand(&cobra.Command{Use: "update [name]", Short: "Update plugins", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequirePluginsURL(s.cfg); err != nil {
+			return err
+		}
 		name := ""
 		if len(args) == 1 {
 			name = args[0]
@@ -254,6 +263,9 @@ func (s *runtimeState) selfUpdateCommand() *cobra.Command {
 		return selfupdate.Manager{Config: s.cfg, Repo: repo.New(s.cfg.Repositories.UpdatesURL), Version: s.version}
 	}
 	cmd.AddCommand(&cobra.Command{Use: "check", RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequireUpdatesURL(s.cfg); err != nil {
+			return err
+		}
 		res, err := mgr().Check(cmd.Context())
 		if err != nil {
 			return err
@@ -264,6 +276,9 @@ func (s *runtimeState) selfUpdateCommand() *cobra.Command {
 		return printf(cmd.OutOrStdout(), "up to date: %s (%s)\n", res.Current, res.Channel)
 	}})
 	cmd.AddCommand(&cobra.Command{Use: "apply", RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequireUpdatesURL(s.cfg); err != nil {
+			return err
+		}
 		return mgr().Apply(cmd.Context(), "")
 	}})
 	cmd.AddCommand(&cobra.Command{Use: "channel <channel>", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {

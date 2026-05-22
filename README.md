@@ -38,6 +38,13 @@ make build
 ./bin/forge --version
 ```
 
+Before plugin discovery or self-update can work, configure repository URLs:
+
+```sh
+forge config set repositories.plugins_url https://bucket.example.com/forge/plugins
+forge config set repositories.updates_url https://bucket.example.com/forge/updates
+```
+
 For local development, run commands through:
 
 ```sh
@@ -52,6 +59,8 @@ Open the TUI:
 ```sh
 forge
 ```
+
+The TUI includes plugin browsing, command selection, global config editing, plugin-specific settings generated from manifests, and secret management. If repository URLs are missing, the dashboard shows configuration warnings.
 
 List and install plugins:
 

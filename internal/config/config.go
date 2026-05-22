@@ -12,17 +12,12 @@ import (
 	"github.com/glieske/forge/internal/platform"
 )
 
-const (
-	DefaultPluginsURL = "https://example-bucket.s3.amazonaws.com/forge/plugins"
-	DefaultUpdatesURL = "https://example-bucket.s3.amazonaws.com/forge/updates"
-)
-
 type Config struct {
-	Repositories RepositoriesConfig     `toml:"repositories"`
-	UI           UIConfig               `toml:"ui"`
-	Security     SecurityConfig         `toml:"security"`
-	Globals      map[string][]string    `toml:"globals"`
-	Plugins      map[string]interface{} `toml:"plugins"`
+	Repositories RepositoriesConfig           `toml:"repositories"`
+	UI           UIConfig                     `toml:"ui"`
+	Security     SecurityConfig               `toml:"security"`
+	Globals      map[string][]string          `toml:"globals"`
+	Plugins      map[string]map[string]string `toml:"plugins"`
 }
 
 type RepositoriesConfig struct {
@@ -45,16 +40,41 @@ type SecurityConfig struct {
 
 func Default() Config {
 	return Config{
-		Repositories: RepositoriesConfig{PluginsURL: DefaultPluginsURL, UpdatesURL: DefaultUpdatesURL, Channel: "stable"},
+		Repositories: RepositoriesConfig{Channel: "stable"},
 		UI:           UIConfig{Interactive: true, FuzzyLimit: 50},
 		Security:     SecurityConfig{RequireChecksums: true, RequireSignatures: true, SecretsBackend: "auto"},
 		Globals: map[string][]string{
-			"aws_profiles": {"dev", "stage", "prod"},
+			"aws_profiles": {},
 			"environments": {"dev", "stage", "prod"},
 			"regions":      {"eu-central-1", "us-east-1"},
 		},
-		Plugins: map[string]interface{}{},
+		Plugins: map[string]map[string]string{},
 	}
+}
+
+func MissingRepositorySettings(cfg Config) []string {
+	var missing []string
+	if strings.TrimSpace(cfg.Repositories.PluginsURL) == "" {
+		missing = append(missing, "repositories.plugins_url")
+	}
+	if strings.TrimSpace(cfg.Repositories.UpdatesURL) == "" {
+		missing = append(missing, "repositories.updates_url")
+	}
+	return missing
+}
+
+func RequirePluginsURL(cfg Config) error {
+	if strings.TrimSpace(cfg.Repositories.PluginsURL) == "" {
+		return fmt.Errorf("missing repositories.plugins_url; set it with `forge config set repositories.plugins_url <url>`")
+	}
+	return nil
+}
+
+func RequireUpdatesURL(cfg Config) error {
+	if strings.TrimSpace(cfg.Repositories.UpdatesURL) == "" {
+		return fmt.Errorf("missing repositories.updates_url; set it with `forge config set repositories.updates_url <url>`")
+	}
+	return nil
 }
 
 func Load(paths platform.Paths) (Config, error) {
@@ -159,6 +179,23 @@ func Get(cfg Config, key string) (string, error) {
 		}
 		return "", fmt.Errorf("unsupported config key %q", key)
 	}
+}
+
+func GetPlugin(cfg Config, pluginName, key string) string {
+	if cfg.Plugins == nil || cfg.Plugins[pluginName] == nil {
+		return ""
+	}
+	return cfg.Plugins[pluginName][key]
+}
+
+func SetPlugin(cfg *Config, pluginName, key, value string) {
+	if cfg.Plugins == nil {
+		cfg.Plugins = map[string]map[string]string{}
+	}
+	if cfg.Plugins[pluginName] == nil {
+		cfg.Plugins[pluginName] = map[string]string{}
+	}
+	cfg.Plugins[pluginName][key] = value
 }
 
 func applyEnv(cfg *Config) {
