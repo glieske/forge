@@ -19,9 +19,11 @@ func Extract(filename string, data []byte, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer func() {
+		_ = os.Remove(tmp.Name())
+	}()
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {
@@ -42,12 +44,16 @@ func extractTarGz(path, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return err
 	}
-	defer gz.Close()
+	defer func() {
+		_ = gz.Close()
+	}()
 	tr := tar.NewReader(gz)
 	for {
 		h, err := tr.Next()
@@ -75,7 +81,7 @@ func extractTarGz(path, dest string) error {
 				return err
 			}
 			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
+				_ = out.Close()
 				return err
 			}
 			if err := out.Close(); err != nil {
@@ -90,7 +96,9 @@ func extractZip(path, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer zr.Close()
+	defer func() {
+		_ = zr.Close()
+	}()
 	for _, zf := range zr.File {
 		target, err := safeJoin(dest, zf.Name)
 		if err != nil {
@@ -111,15 +119,18 @@ func extractZip(path, dest string) error {
 		}
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, zf.Mode())
 		if err != nil {
-			in.Close()
+			_ = in.Close()
 			return err
 		}
 		if _, err := io.Copy(out, in); err != nil {
-			in.Close()
-			out.Close()
+			_ = in.Close()
+			_ = out.Close()
 			return err
 		}
-		in.Close()
+		if err := in.Close(); err != nil {
+			_ = out.Close()
+			return err
+		}
 		if err := out.Close(); err != nil {
 			return err
 		}

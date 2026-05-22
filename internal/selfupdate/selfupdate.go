@@ -88,7 +88,9 @@ func (m Manager) Apply(ctx context.Context, targetPath string) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 	if err := plugin.Extract(pkgName, pkg, tmpDir); err != nil {
 		return err
 	}

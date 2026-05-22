@@ -114,8 +114,11 @@ func (s FileStore) write(data map[string]map[string]string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return toml.NewEncoder(f).Encode(data)
+	if err := toml.NewEncoder(f).Encode(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func service(scope string) string {

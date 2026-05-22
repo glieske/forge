@@ -92,8 +92,11 @@ func Save(path string, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return toml.NewEncoder(f).Encode(cfg)
+	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func Set(cfg *Config, key, value string) error {

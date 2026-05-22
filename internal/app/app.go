@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -125,7 +126,9 @@ func (s *runtimeState) pluginCommand() *cobra.Command {
 			return err
 		}
 		for _, item := range items {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", item.Name, item.Version)
+			if err := printf(cmd.OutOrStdout(), "%s\t%s\n", item.Name, item.Version); err != nil {
+				return err
+			}
 		}
 		return nil
 	}})
@@ -135,7 +138,9 @@ func (s *runtimeState) pluginCommand() *cobra.Command {
 			return err
 		}
 		for _, p := range idx.Plugins {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", p.Name, p.Latest, p.Description)
+			if err := printf(cmd.OutOrStdout(), "%s\t%s\t%s\n", p.Name, p.Latest, p.Description); err != nil {
+				return err
+			}
 		}
 		return nil
 	}})
@@ -161,16 +166,24 @@ func (s *runtimeState) pluginCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n%s\n", item.Name, item.Version, item.Manifest.Description)
+		if err := printf(cmd.OutOrStdout(), "%s %s\n%s\n", item.Name, item.Version, item.Manifest.Description); err != nil {
+			return err
+		}
 		for _, c := range item.Manifest.Commands {
-			fmt.Fprintf(cmd.OutOrStdout(), "command: %s\t%s\n", c.Name, c.Description)
+			if err := printf(cmd.OutOrStdout(), "command: %s\t%s\n", c.Name, c.Description); err != nil {
+				return err
+			}
 		}
 		desc, err := s.pluginManager().Describe(cmd.Context(), args[0])
 		if err == nil {
-			fmt.Fprintf(cmd.OutOrStdout(), "capabilities: %s\n", strings.Join(desc.Capabilities, ","))
+			if err := printf(cmd.OutOrStdout(), "capabilities: %s\n", strings.Join(desc.Capabilities, ",")); err != nil {
+				return err
+			}
 			for _, c := range desc.Commands {
 				if len(c.Examples) > 0 {
-					fmt.Fprintf(cmd.OutOrStdout(), "example: %s\n", c.Examples[0])
+					if err := printf(cmd.OutOrStdout(), "example: %s\n", c.Examples[0]); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -186,8 +199,7 @@ func (s *runtimeState) configCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), value)
-		return nil
+		return println(cmd.OutOrStdout(), value)
 	}})
 	cmd.AddCommand(&cobra.Command{Use: "set <key> <value>", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Set(&s.cfg, args[0], args[1]); err != nil {
@@ -218,11 +230,12 @@ func (s *runtimeState) secretCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), value)
-		return nil
+		return println(cmd.OutOrStdout(), value)
 	}})
 	cmd.AddCommand(&cobra.Command{Use: "set <scope> <key>", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Fprint(cmd.OutOrStdout(), "value: ")
+		if err := print(cmd.OutOrStdout(), "value: "); err != nil {
+			return err
+		}
 		var value string
 		if _, err := fmt.Fscan(os.Stdin, &value); err != nil {
 			return err
@@ -246,11 +259,9 @@ func (s *runtimeState) selfUpdateCommand() *cobra.Command {
 			return err
 		}
 		if res.Update {
-			fmt.Fprintf(cmd.OutOrStdout(), "update available: %s -> %s (%s)\n", res.Current, res.Latest, res.Channel)
-		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "up to date: %s (%s)\n", res.Current, res.Channel)
+			return printf(cmd.OutOrStdout(), "update available: %s -> %s (%s)\n", res.Current, res.Latest, res.Channel)
 		}
-		return nil
+		return printf(cmd.OutOrStdout(), "up to date: %s (%s)\n", res.Current, res.Channel)
 	}})
 	cmd.AddCommand(&cobra.Command{Use: "apply", RunE: func(cmd *cobra.Command, args []string) error {
 		return mgr().Apply(cmd.Context(), "")
@@ -267,4 +278,19 @@ func (s *runtimeState) selfUpdateCommand() *cobra.Command {
 
 func Context() context.Context {
 	return context.Background()
+}
+
+func printf(w io.Writer, format string, args ...interface{}) error {
+	_, err := fmt.Fprintf(w, format, args...)
+	return err
+}
+
+func print(w io.Writer, args ...interface{}) error {
+	_, err := fmt.Fprint(w, args...)
+	return err
+}
+
+func println(w io.Writer, args ...interface{}) error {
+	_, err := fmt.Fprintln(w, args...)
+	return err
 }
