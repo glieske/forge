@@ -6,6 +6,11 @@ CHANNEL="${CHANNEL:-stable}"
 COMMIT="${GITHUB_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
 OUT_ROOT="${OUT_ROOT:-dist/s3}"
 
+case "$OUT_ROOT" in
+  /*) ;;
+  *) OUT_ROOT="$(pwd)/$OUT_ROOT" ;;
+esac
+
 if [ -z "$VERSION" ]; then
   echo "VERSION is required, for example VERSION=0.2.0" >&2
   exit 2
