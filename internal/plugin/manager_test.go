@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/glieske/forge/internal/config"
@@ -29,6 +30,8 @@ func TestInstallPluginFromHTTPRepo(t *testing.T) {
 	archive := testTarGz(t, "forge-connect", "#!/usr/bin/env sh\nprintf ok\n")
 	checksums := fmt.Sprintf("%s  %s\n", security.SHA256(archive), packageFile)
 	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte(checksums)))
+	rootIndex := `{"schema":1,"plugins":[{"name":"connect","description":"Connect","latest":"1.2.0","channels":{"stable":"1.2.0"}}]}`
+	versionsIndex := `{"schema":1,"name":"connect","versions":["1.2.0"],"channels":{"stable":"1.2.0"}}`
 	manifest := `
 schema = 1
 name = "connect"
@@ -44,9 +47,13 @@ description = "Connect"
 	client.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
 		case "/index.json":
-			return response(http.StatusOK, `{"schema":1,"plugins":[{"name":"connect","description":"Connect","latest":"1.2.0","channels":{"stable":"1.2.0"}}]}`), nil
+			return response(http.StatusOK, rootIndex), nil
+		case "/index.json.sig":
+			return response(http.StatusOK, signBase64(priv, []byte(rootIndex))), nil
 		case "/connect/index.json":
-			return response(http.StatusOK, `{"schema":1,"name":"connect","versions":["1.2.0"],"channels":{"stable":"1.2.0"}}`), nil
+			return response(http.StatusOK, versionsIndex), nil
+		case "/connect/index.json.sig":
+			return response(http.StatusOK, signBase64(priv, []byte(versionsIndex))), nil
 		case "/connect/1.2.0/" + packageFile:
 			return byteResponse(http.StatusOK, archive), nil
 		case "/connect/1.2.0/checksums.txt":
@@ -55,6 +62,8 @@ description = "Connect"
 			return response(http.StatusOK, sig), nil
 		case "/connect/1.2.0/manifest.toml":
 			return response(http.StatusOK, manifest), nil
+		case "/connect/1.2.0/manifest.toml.sig":
+			return response(http.StatusOK, signBase64(priv, []byte(manifest))), nil
 		default:
 			return response(http.StatusNotFound, "not found"), nil
 		}
@@ -107,6 +116,7 @@ version = "1.2.0"
 description = "Connect"
 entrypoint = "forge-connect"
 `
+	versionsIndex := `{"schema":1,"name":"connect","versions":["1.2.0"],"channels":{"stable":"1.2.0"}}`
 	publicKey := base64.StdEncoding.EncodeToString(pub)
 	client := repo.New("https://repo.example.test")
 	client.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -114,7 +124,9 @@ entrypoint = "forge-connect"
 		case "/public-key.ed25519":
 			return response(http.StatusOK, publicKey+"\n"), nil
 		case "/connect/index.json":
-			return response(http.StatusOK, `{"schema":1,"name":"connect","versions":["1.2.0"],"channels":{"stable":"1.2.0"}}`), nil
+			return response(http.StatusOK, versionsIndex), nil
+		case "/connect/index.json.sig":
+			return response(http.StatusOK, signBase64(priv, []byte(versionsIndex))), nil
 		case "/connect/1.2.0/" + packageFile:
 			return byteResponse(http.StatusOK, archive), nil
 		case "/connect/1.2.0/checksums.txt":
@@ -123,6 +135,8 @@ entrypoint = "forge-connect"
 			return response(http.StatusOK, sig), nil
 		case "/connect/1.2.0/manifest.toml":
 			return response(http.StatusOK, manifest), nil
+		case "/connect/1.2.0/manifest.toml.sig":
+			return response(http.StatusOK, signBase64(priv, []byte(manifest))), nil
 		default:
 			return response(http.StatusNotFound, "not found"), nil
 		}
@@ -198,15 +212,23 @@ name = "base"
 version = ">=1.0.0 <2.0.0"
 `,
 	}
+	indexes := map[string]string{
+		"/connect/index.json": `{"schema":1,"name":"connect","versions":["1.2.0"],"channels":{"stable":"1.2.0"}}`,
+		"/base/index.json":    `{"schema":1,"name":"base","versions":["1.0.0"],"channels":{"stable":"1.0.0"}}`,
+	}
 	client := repo.New("https://repo.example.test")
 	client.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
-		case "/connect/index.json":
-			return response(http.StatusOK, `{"schema":1,"name":"connect","versions":["1.2.0"],"channels":{"stable":"1.2.0"}}`), nil
-		case "/base/index.json":
-			return response(http.StatusOK, `{"schema":1,"name":"base","versions":["1.0.0"],"channels":{"stable":"1.0.0"}}`), nil
+		case "/connect/index.json", "/base/index.json":
+			return response(http.StatusOK, indexes[r.URL.Path]), nil
+		case "/connect/index.json.sig", "/base/index.json.sig":
+			indexPath := strings.TrimSuffix(r.URL.Path, ".sig")
+			return response(http.StatusOK, signBase64(priv, []byte(indexes[indexPath]))), nil
 		case "/connect/1.2.0/manifest.toml", "/base/1.0.0/manifest.toml":
 			return response(http.StatusOK, manifests[r.URL.Path]), nil
+		case "/connect/1.2.0/manifest.toml.sig", "/base/1.0.0/manifest.toml.sig":
+			manifestPath := strings.TrimSuffix(r.URL.Path, ".sig")
+			return response(http.StatusOK, signBase64(priv, []byte(manifests[manifestPath]))), nil
 		case "/connect/1.2.0/" + artifacts["connect"].packageFile:
 			return byteResponse(http.StatusOK, artifacts["connect"].archive), nil
 		case "/connect/1.2.0/checksums.txt":
@@ -357,6 +379,10 @@ func byteResponse(status int, body []byte) *http.Response {
 		Body:       io.NopCloser(bytes.NewReader(body)),
 		Header:     http.Header{},
 	}
+}
+
+func signBase64(priv ed25519.PrivateKey, msg []byte) string {
+	return base64.StdEncoding.EncodeToString(ed25519.Sign(priv, msg))
 }
 
 func testTarGz(t *testing.T, name, content string) []byte {

@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 type Manager struct {
 	Config  config.Config
+	Paths   platform.Paths
 	Repo    repo.Client
 	Version string
 }
@@ -30,7 +32,7 @@ type CheckResult struct {
 
 func (m Manager) Check(ctx context.Context) (CheckResult, error) {
 	channel := m.Config.Repositories.Channel
-	idx, err := m.Repo.UpdateIndex(ctx, channel)
+	idx, err := m.updateIndex(ctx, channel)
 	if err != nil {
 		return CheckResult{}, err
 	}
@@ -65,11 +67,15 @@ func (m Manager) Apply(ctx context.Context, targetPath string) error {
 		return err
 	}
 	if m.Config.Security.RequireSignatures {
+		publicKey, err := m.signingPublicKey(ctx)
+		if err != nil {
+			return err
+		}
 		sig, err := m.Repo.GetBytes(ctx, base+"/checksums.txt.sig")
 		if err != nil {
 			return err
 		}
-		if err := security.VerifyEd25519(m.Config.Security.PublicKey, checksums, sig); err != nil {
+		if err := security.VerifyEd25519(publicKey, checksums, sig); err != nil {
 			return err
 		}
 	}
@@ -107,4 +113,31 @@ func (m Manager) Apply(ctx context.Context, targetPath string) error {
 		return fmt.Errorf("downloaded update to %s; replace the running executable after exit", newPath)
 	}
 	return os.Rename(newPath, targetPath)
+}
+
+func (m Manager) updateIndex(ctx context.Context, channel string) (repo.UpdateIndex, error) {
+	rel := filepath.ToSlash(filepath.Join(channel, "index.json"))
+	body, err := m.Repo.GetBytes(ctx, rel)
+	if err != nil {
+		return repo.UpdateIndex{}, err
+	}
+	if m.Config.Security.RequireSignatures {
+		publicKey, err := m.signingPublicKey(ctx)
+		if err != nil {
+			return repo.UpdateIndex{}, err
+		}
+		sig, err := m.Repo.GetBytes(ctx, rel+".sig")
+		if err != nil {
+			return repo.UpdateIndex{}, err
+		}
+		if err := security.VerifyEd25519(publicKey, body, sig); err != nil {
+			return repo.UpdateIndex{}, fmt.Errorf("verify %s: %w", rel, err)
+		}
+	}
+	var idx repo.UpdateIndex
+	return idx, json.Unmarshal(body, &idx)
+}
+
+func (m Manager) signingPublicKey(ctx context.Context) (string, error) {
+	return security.RepositoryPublicKey(ctx, m.Paths, m.Config, m.Repo, "updates")
 }

@@ -70,10 +70,15 @@ forge self-update channel stable</code></pre>
       <h2>Repository indexes</h2>
       <ul>
         <li><a href="forge/plugins/public-key.ed25519">Plugin signing public key</a></li>
+        <li><a href="forge/updates/public-key.ed25519">Update signing public key</a></li>
         <li><a href="forge/plugins/index.json">Plugin index</a></li>
+        <li><a href="forge/plugins/index.json.sig">Plugin index signature</a></li>
         <li><a href="forge/plugins/connect/index.json">connect plugin versions</a></li>
+        <li><a href="forge/plugins/connect/index.json.sig">connect plugin versions signature</a></li>
         <li><a href="forge/plugins/connect/1.2.0/manifest.toml">connect 1.2.0 manifest</a></li>
+        <li><a href="forge/plugins/connect/1.2.0/manifest.toml.sig">connect 1.2.0 manifest signature</a></li>
         <li><a href="forge/updates/stable/index.json">Stable update channel</a></li>
+        <li><a href="forge/updates/stable/index.json.sig">Stable update channel signature</a></li>
         <li><a href="forge/updates/beta/index.json">Beta update channel</a></li>
         <li><a href="forge/updates/dev/index.json">Dev update channel</a></li>
       </ul>
@@ -83,17 +88,22 @@ forge self-update channel stable</code></pre>
   plugins/
     public-key.ed25519
     index.json
+    index.json.sig
     &lt;plugin-name&gt;/
       index.json
+      index.json.sig
       &lt;semver&gt;/
         manifest.toml
+        manifest.toml.sig
         forge-&lt;plugin&gt;_&lt;os&gt;_&lt;arch&gt;.tar.gz
         forge-&lt;plugin&gt;_&lt;os&gt;_&lt;arch&gt;.zip
         checksums.txt
         checksums.txt.sig
   updates/
+    public-key.ed25519
     &lt;channel&gt;/
       index.json
+      index.json.sig
       &lt;semver&gt;/
         forge_&lt;os&gt;_&lt;arch&gt;.tar.gz
         forge_&lt;os&gt;_&lt;arch&gt;.zip

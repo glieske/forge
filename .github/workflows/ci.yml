@@ -86,7 +86,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
-          args: --timeout=5m
+          args: ./... --timeout=5m
 
       - name: Test
         run: make test
@@ -202,10 +202,13 @@ jobs:
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
           FORGE_ED25519_PRIVATE_KEY: ${{ secrets.FORGE_ED25519_PRIVATE_KEY }}
+          FORGE_ED25519_PUBLIC_KEY: ${{ secrets.FORGE_ED25519_PUBLIC_KEY }}
         run: ./scripts/checksum-release.sh
 
       - name: Upload release repository to S3
         run: |
+          aws s3 cp "dist/s3/forge/updates/public-key.ed25519" \
+            "s3://${{ inputs.s3_bucket }}/${{ inputs.s3_prefix }}/updates/public-key.ed25519"
           aws s3 sync "dist/s3/forge/updates/${{ inputs.channel }}" \
             "s3://${{ inputs.s3_bucket }}/${{ inputs.s3_prefix }}/updates/${{ inputs.channel }}"
 

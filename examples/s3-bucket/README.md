@@ -17,17 +17,22 @@ forge/
   plugins/
     public-key.ed25519
     index.json
+    index.json.sig
     <plugin-name>/
       index.json
+      index.json.sig
       <semver>/
         manifest.toml
+        manifest.toml.sig
         forge-<plugin>_<os>_<arch>.tar.gz
         forge-<plugin>_<os>_<arch>.zip
         checksums.txt
         checksums.txt.sig
   updates/
+    public-key.ed25519
     <channel>/
       index.json
+      index.json.sig
       <semver>/
         forge_<os>_<arch>.tar.gz
         forge_<os>_<arch>.zip
@@ -56,9 +61,18 @@ Every package must be listed in `checksums.txt`:
 <sha256>  forge-connect_linux_amd64.tar.gz
 ```
 
-`public-key.ed25519` contains the base64-encoded Ed25519 public key used to verify plugin repository signatures. `security.public_key` in local config is optional; when set, it overrides this repository key.
+`public-key.ed25519` contains the base64-encoded Ed25519 public key used to verify repository signatures. `security.public_key` in local config is optional; when set, it overrides repository keys.
 
-`checksums.txt.sig` is a base64-encoded Ed25519 signature of the raw `checksums.txt` file. `forge` verifies the signature using `security.public_key` from config, or `public-key.ed25519` from the plugin repository when the config value is empty.
+Every metadata file read from the repository must have a sibling Ed25519 signature:
+
+- `plugins/index.json.sig`
+- `plugins/<plugin>/index.json.sig`
+- `plugins/<plugin>/<version>/manifest.toml.sig`
+- `updates/<channel>/index.json.sig`
+
+`checksums.txt.sig` is a base64-encoded Ed25519 signature of the raw `checksums.txt` file. `forge` verifies signatures using `security.public_key` from config, or `public-key.ed25519` from the relevant repository root when the config value is empty.
+
+When repository keys are loaded from S3, `forge` stores the accepted key fingerprint in local `trusted-repositories.toml`. Later key changes are rejected until the user verifies the new key and resets the local trust record.
 
 With default security settings, `forge` records verified signature metadata during installation and refuses to run plugins that do not have trust metadata. If `security.public_key` is configured later, already installed plugins must match that key fingerprint to run.
 
@@ -95,6 +109,7 @@ Required manual inputs:
 Required secret:
 
 - `FORGE_ED25519_PRIVATE_KEY`: base64-encoded Ed25519 seed or private key used to sign `checksums.txt`.
+- `FORGE_ED25519_PUBLIC_KEY`: base64-encoded Ed25519 public key published as `updates/public-key.ed25519`.
 
 Generate a key pair with:
 
@@ -102,7 +117,7 @@ Generate a key pair with:
 go run ./tools/generate-keypair
 ```
 
-Store `FORGE_ED25519_PRIVATE_KEY` as a GitHub secret. Publish `FORGE_ED25519_PUBLIC_KEY` as `forge/plugins/public-key.ed25519`; clients may optionally set the same value as `security.public_key` to pin the key locally.
+Store `FORGE_ED25519_PRIVATE_KEY` as a GitHub secret. Publish `FORGE_ED25519_PUBLIC_KEY` as `forge/plugins/public-key.ed25519` and `forge/updates/public-key.ed25519`; clients may optionally set the same value as `security.public_key` to pin the key locally.
 
 AWS credentials can be provided either by repository secret `AWS_ROLE_TO_ASSUME` for OIDC, or by secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 

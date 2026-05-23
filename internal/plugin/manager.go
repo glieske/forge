@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/Masterminds/semver/v3"
@@ -43,7 +42,8 @@ type TrustMetadata struct {
 }
 
 func (m Manager) Available(ctx context.Context) (repo.PluginIndex, error) {
-	return m.Repo.PluginIndex(ctx)
+	var idx repo.PluginIndex
+	return idx, m.getJSON(ctx, "index.json", &idx)
 }
 
 func (m Manager) Install(ctx context.Context, name, version, channel string) error {
@@ -54,7 +54,7 @@ func (m Manager) install(ctx context.Context, name, version, channel string, vis
 	if channel == "" {
 		channel = m.Config.Repositories.Channel
 	}
-	versions, err := m.Repo.PluginVersions(ctx, name)
+	versions, err := m.pluginVersions(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (m Manager) install(ctx context.Context, name, version, channel string, vis
 
 	pkgName := packageName(name, version, runtime.GOOS, runtime.GOARCH)
 	base := filepath.ToSlash(filepath.Join(name, version))
-	manifestBytes, err := m.Repo.GetBytes(ctx, base+"/manifest.toml")
+	manifestBytes, err := m.getBytes(ctx, base+"/manifest.toml")
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func (m Manager) installDependencies(ctx context.Context, manifest Manifest, cha
 }
 
 func (m Manager) resolveDependencyVersion(ctx context.Context, name, constraint, channel string) (string, error) {
-	versions, err := m.Repo.PluginVersions(ctx, name)
+	versions, err := m.pluginVersions(ctx, name)
 	if err != nil {
 		return "", err
 	}
@@ -388,14 +388,42 @@ func (m Manager) requireTrusted(item Installed) error {
 }
 
 func (m Manager) signingPublicKey(ctx context.Context) (string, error) {
-	if m.Config.Security.PublicKey != "" {
-		return m.Config.Security.PublicKey, nil
-	}
-	key, err := m.Repo.GetBytes(ctx, "public-key.ed25519")
+	return security.RepositoryPublicKey(ctx, m.Paths, m.Config, m.Repo, "plugins")
+}
+
+func (m Manager) pluginVersions(ctx context.Context, name string) (repo.PluginVersions, error) {
+	var idx repo.PluginVersions
+	return idx, m.getJSON(ctx, filepath.ToSlash(filepath.Join(name, "index.json")), &idx)
+}
+
+func (m Manager) getJSON(ctx context.Context, rel string, target interface{}) error {
+	body, err := m.getBytes(ctx, rel)
 	if err != nil {
-		return "", fmt.Errorf("load signing public key from plugin repository: %w", err)
+		return err
 	}
-	return strings.TrimSpace(string(key)), nil
+	return json.Unmarshal(body, target)
+}
+
+func (m Manager) getBytes(ctx context.Context, rel string) ([]byte, error) {
+	body, err := m.Repo.GetBytes(ctx, rel)
+	if err != nil {
+		return nil, err
+	}
+	if !m.Config.Security.RequireSignatures {
+		return body, nil
+	}
+	publicKey, err := m.signingPublicKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sig, err := m.Repo.GetBytes(ctx, rel+".sig")
+	if err != nil {
+		return nil, err
+	}
+	if err := security.VerifyEd25519(publicKey, body, sig); err != nil {
+		return nil, fmt.Errorf("verify %s: %w", rel, err)
+	}
+	return body, nil
 }
 
 func writeTrust(path string, trust TrustMetadata) error {

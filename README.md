@@ -24,7 +24,7 @@ The plugin itself is a separate executable (`forge-connect`) managed by `forge`.
 - Self-update repository with `stable`, `beta`, and `dev` channels.
 - TOML global configuration shared with plugins.
 - Secret storage through system keychain/keyring with file fallback.
-- SHA256 checksum and Ed25519 signature verification for downloaded artifacts.
+- SHA256 checksum and Ed25519 signature verification for repository metadata and downloaded artifacts.
 - Refuses to run plugins that were not installed from a signature verified by a known public key.
 - Fuzzy command and argument selection in the TUI.
 
@@ -46,11 +46,14 @@ forge config set repositories.plugins_url https://bucket.example.com/forge/plugi
 forge config set repositories.updates_url https://bucket.example.com/forge/updates
 ```
 
-By default, plugin signature verification loads the trusted Ed25519 public key from the plugin repository:
+By default, signature verification loads the trusted Ed25519 public key from each repository root:
 
 ```text
 <plugins_url>/public-key.ed25519
+<updates_url>/public-key.ed25519
 ```
+
+When `security.public_key` is empty, `forge` pins the first accepted repository key fingerprint in `trusted-repositories.toml` and rejects later key changes until the user verifies and resets that trust record.
 
 Optionally pin/override that key locally:
 
@@ -113,17 +116,23 @@ forge secret delete global token
 ```text
 forge/
   plugins/
+    public-key.ed25519
     index.json
+    index.json.sig
     connect/
       index.json
+      index.json.sig
       1.2.0/
         manifest.toml
+        manifest.toml.sig
         forge-connect_linux_amd64.tar.gz
         checksums.txt
         checksums.txt.sig
   updates/
+    public-key.ed25519
     stable/
       index.json
+      index.json.sig
       0.2.0/
         forge_linux_amd64.tar.gz
         checksums.txt
@@ -184,7 +193,7 @@ make build
 make build-all
 ```
 
-Generate an Ed25519 key pair for signing release checksums:
+Generate an Ed25519 key pair for signing repository metadata and release checksums:
 
 ```sh
 go run ./tools/generate-keypair
@@ -196,11 +205,11 @@ Build self-update artifacts locally:
 VERSION=0.2.0 CHANNEL=stable make package-release
 ```
 
-In GitHub Actions, release order is: build archives, sign archives with Cosign keyless OIDC, then calculate final SHA256 checksums and sign `checksums.txt` with the configured Ed25519 key.
+In GitHub Actions, release order is: build archives, sign archives with Cosign keyless OIDC, then calculate final SHA256 checksums, sign `checksums.txt`, sign the update `index.json`, and publish `updates/public-key.ed25519`.
 
 ## CI And Security
 
-GitHub Actions runs formatting checks, `go vet`, tests, cross-compilation, `golangci-lint`, Trivy vulnerability scans, and S3 example validation. Manual workflow dispatch can publish update artifacts to a provided S3 bucket. Release archives are signed with Cosign keyless signing through GitHub OIDC; after Cosign bundles are written, final checksums are calculated and `checksums.txt` is signed with the configured Ed25519 key.
+GitHub Actions runs formatting checks, `go vet`, tests, cross-compilation, `golangci-lint`, Trivy vulnerability scans, and S3 example validation. Manual workflow dispatch can publish update artifacts to a provided S3 bucket. Release archives are signed with Cosign keyless signing through GitHub OIDC; after Cosign bundles are written, final checksums and repository metadata are signed with the configured Ed25519 key.
 
 Verify a Cosign bundle:
 

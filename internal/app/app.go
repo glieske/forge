@@ -260,7 +260,7 @@ func (s *runtimeState) secretCommand() *cobra.Command {
 func (s *runtimeState) selfUpdateCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "self-update", Short: "Manage forge updates"}
 	mgr := func() selfupdate.Manager {
-		return selfupdate.Manager{Config: s.cfg, Repo: repo.New(s.cfg.Repositories.UpdatesURL), Version: s.version}
+		return selfupdate.Manager{Config: s.cfg, Paths: s.paths, Repo: repo.New(s.cfg.Repositories.UpdatesURL), Version: s.version}
 	}
 	cmd.AddCommand(&cobra.Command{Use: "check", RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.RequireUpdatesURL(s.cfg); err != nil {

@@ -17,7 +17,7 @@ type updateIndex struct {
 
 func main() {
 	if len(os.Args) != 4 {
-		fmt.Fprintln(os.Stderr, "usage: update-release-index <index.json> <channel> <version>")
+		stderr("usage: update-release-index <index.json> <channel> <version>")
 		os.Exit(2)
 	}
 	path := os.Args[1]
@@ -32,11 +32,11 @@ func main() {
 	}
 	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &idx); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			stderr(err)
 			os.Exit(1)
 		}
 	} else if err != nil && !os.IsNotExist(err) {
-		fmt.Fprintln(os.Stderr, err)
+		stderr(err)
 		os.Exit(1)
 	}
 
@@ -50,18 +50,22 @@ func main() {
 
 	data, err := json.MarshalIndent(idx, "", "  ")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		stderr(err)
 		os.Exit(1)
 	}
 	data = append(data, '\n')
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		stderr(err)
 		os.Exit(1)
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		stderr(err)
 		os.Exit(1)
 	}
+}
+
+func stderr(args ...interface{}) {
+	_, _ = fmt.Fprintln(os.Stderr, args...)
 }
 
 func prependUnique(version string, versions []string) []string {

@@ -35,5 +35,13 @@ build_one darwin arm64
 build_one windows amd64
 
 (cd "$OUT_DIR" && shasum -a 256 forge-connect_* > checksums.txt)
+
+if [ -n "${FORGE_ED25519_PRIVATE_KEY:-}" ]; then
+  go run ../../../tools/sign-file "$OUT_DIR/manifest.toml" "$OUT_DIR/manifest.toml.sig"
+  go run ../../../tools/sign-file "$OUT_DIR/checksums.txt" "$OUT_DIR/checksums.txt.sig"
+  echo "Manifest and checksums signed."
+else
+  echo "Set FORGE_ED25519_PRIVATE_KEY to sign manifest.toml and checksums.txt."
+fi
+
 echo "Package files written to $OUT_DIR"
-echo "Sign $OUT_DIR/checksums.txt and write checksums.txt.sig before publishing."

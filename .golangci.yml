@@ -6,6 +6,7 @@ run:
 linters:
   enable:
     - errcheck
+    - gocritic
     - govet
     - ineffassign
     - staticcheck

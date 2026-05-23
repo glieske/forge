@@ -9,7 +9,7 @@ import (
 
 func main() {
 	if len(os.Args) != 3 {
-		stderr("usage: sign-checksums <checksums.txt> <checksums.txt.sig>")
+		stderr("usage: sign-file <input> <output.sig>")
 		os.Exit(2)
 	}
 	raw := os.Getenv("FORGE_ED25519_PRIVATE_KEY")
