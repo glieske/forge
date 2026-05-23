@@ -1,0 +1,107 @@
+name: S3 Repository Maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      s3_bucket:
+        description: "Target S3 bucket name, without s3://"
+        required: true
+        type: string
+      s3_prefix:
+        description: "Repository prefix containing plugins/ and updates/"
+        required: false
+        default: "forge"
+        type: string
+      site_prefix:
+        description: "Prefix for HTML files; leave empty for bucket root"
+        required: false
+        default: ""
+        type: string
+      aws_region:
+        description: "AWS region"
+        required: false
+        default: "eu-central-1"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GO_VERSION: "1.26.2"
+  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+
+jobs:
+  update-s3-repository:
+    name: Update S3 HTML And Signatures
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Configure AWS credentials from OIDC role
+        if: env.AWS_ROLE_TO_ASSUME != ''
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Configure AWS credentials from secrets
+        if: env.AWS_ROLE_TO_ASSUME == ''
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Download current repository metadata
+        run: |
+          mkdir -p dist/s3/forge
+          aws s3 sync "s3://${{ inputs.s3_bucket }}/${{ inputs.s3_prefix }}" dist/s3/forge \
+            --exclude "*" \
+            --include "*.json" \
+            --include "*.toml" \
+            --include "checksums.txt"
+
+      - name: Sign required repository metadata
+        env:
+          ROOT: dist/s3/forge
+          FORGE_ED25519_PRIVATE_KEY: ${{ secrets.FORGE_ED25519_PRIVATE_KEY }}
+          FORGE_ED25519_PUBLIC_KEY: ${{ secrets.FORGE_ED25519_PUBLIC_KEY }}
+        run: ./scripts/sign-s3-metadata.sh
+
+      - name: Upload signatures and public keys
+        run: |
+          aws s3 sync dist/s3/forge "s3://${{ inputs.s3_bucket }}/${{ inputs.s3_prefix }}" \
+            --exclude "*" \
+            --include "*.sig" \
+            --include "public-key.ed25519"
+
+      - name: Upload HTML files
+        run: |
+          target="s3://${{ inputs.s3_bucket }}"
+          if [ -n "${{ inputs.site_prefix }}" ]; then
+            target="$target/${{ inputs.site_prefix }}"
+          fi
+          aws s3 cp examples/s3-bucket "$target" \
+            --recursive \
+            --exclude "*" \
+            --include "*.html" \
+            --content-type "text/html; charset=utf-8"
+
+      - name: Print published URLs
+        run: |
+          echo "Repository URL:"
+          echo "https://${{ inputs.s3_bucket }}.s3.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.s3_prefix }}"
+          echo "HTML URL:"
+          if [ -n "${{ inputs.site_prefix }}" ]; then
+            echo "https://${{ inputs.s3_bucket }}.s3.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.site_prefix }}/index.html"
+          else
+            echo "https://${{ inputs.s3_bucket }}.s3.${{ inputs.aws_region }}.amazonaws.com/index.html"
+          fi

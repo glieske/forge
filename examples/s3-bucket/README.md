@@ -131,6 +131,29 @@ Plugin artifacts should be published by the plugin release process using the lay
 
 The same deploy job creates or updates GitHub Release `v<version>` and uploads the version assets: platform archives, Cosign bundles, `checksums.txt`, and `checksums.txt.sig`. Non-`stable` channels are marked as prereleases.
 
+## S3 Repository Maintenance
+
+The `S3 Repository Maintenance` workflow updates existing repository metadata without publishing a new forge version. Use it after changing static HTML or after enabling metadata signatures on an existing bucket.
+
+It downloads metadata from:
+
+```text
+s3://<bucket>/<s3_prefix>/
+```
+
+Then it overwrites required signatures and public keys:
+
+- `plugins/public-key.ed25519`
+- `plugins/index.json.sig`
+- `plugins/<plugin>/index.json.sig`
+- `plugins/<plugin>/<version>/manifest.toml.sig`
+- `plugins/<plugin>/<version>/checksums.txt.sig`
+- `updates/public-key.ed25519`
+- `updates/<channel>/index.json.sig`
+- `updates/<channel>/<version>/checksums.txt.sig`
+
+It also uploads HTML files from `examples/s3-bucket` to `site_prefix` on the same bucket, or to the bucket root when `site_prefix` is empty.
+
 Release artifacts are additionally signed with Cosign keyless signing in GitHub Actions. The workflow writes Sigstore bundles next to each archive, then calculates and signs final checksums:
 
 ```text

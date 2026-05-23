@@ -211,6 +211,8 @@ In GitHub Actions, release order is: build archives, sign archives with Cosign k
 
 GitHub Actions runs formatting checks, `go vet`, tests, cross-compilation, `golangci-lint`, Trivy vulnerability scans, and S3 example validation. Manual workflow dispatch can publish update artifacts to a provided S3 bucket and create a GitHub Release tagged as `v<version>`. Release archives are signed with Cosign keyless signing through GitHub OIDC; after Cosign bundles are written, final checksums and repository metadata are signed with the configured Ed25519 key.
 
+The `S3 Repository Maintenance` workflow updates static HTML and overwrites required metadata signatures on an existing bucket. It is useful when `plugins/index.json.sig`, plugin manifest signatures, or update index signatures need to be generated for already published files.
+
 Verify a Cosign bundle:
 
 ```sh
