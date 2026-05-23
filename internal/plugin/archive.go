@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -110,6 +111,9 @@ func extractZip(path, dest string) error {
 			}
 			continue
 		}
+		if !zf.Mode().IsRegular() {
+			return fmt.Errorf("unsupported zip entry type %q", zf.Name)
+		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
@@ -139,9 +143,24 @@ func extractZip(path, dest string) error {
 }
 
 func safeJoin(root, name string) (string, error) {
-	clean := filepath.Clean(name)
-	if filepath.IsAbs(clean) || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || clean == ".." {
+	clean := path.Clean(strings.ReplaceAll(name, "\\", "/"))
+	if clean == "." || path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", fmt.Errorf("unsafe archive path %q", name)
 	}
-	return filepath.Join(root, clean), nil
+	if !filepath.IsLocal(clean) {
+		return "", fmt.Errorf("unsafe archive path %q", name)
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(rootAbs, filepath.FromSlash(clean))
+	rel, err := filepath.Rel(rootAbs, target)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("unsafe archive path %q", name)
+	}
+	return target, nil
 }
