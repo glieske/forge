@@ -16,6 +16,7 @@ import (
 	"github.com/glieske/forge/internal/plugin"
 	"github.com/glieske/forge/internal/repo"
 	"github.com/glieske/forge/internal/secrets"
+	"github.com/glieske/forge/internal/selfupdate"
 )
 
 type Options struct {
@@ -23,6 +24,7 @@ type Options struct {
 	Paths   platform.Paths
 	Config  config.Config
 	Plugins plugin.Manager
+	Updates selfupdate.Manager
 	Secrets secrets.Store
 }
 
@@ -33,6 +35,7 @@ const (
 	screenInstalled
 	screenAvailable
 	screenCommands
+	screenUpdates
 	screenConfig
 	screenSecrets
 	screenInput
@@ -98,6 +101,16 @@ type availableMsg struct {
 type actionMsg struct {
 	status string
 	err    error
+}
+
+type updateCheckMsg struct {
+	result selfupdate.CheckResult
+	err    error
+}
+
+type updateVersionsMsg struct {
+	items []string
+	err   error
 }
 
 type runDoneMsg struct {
@@ -192,11 +205,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = m.previous
 			m.input.SetValue("")
 			m.refreshScreen()
+		} else if m.screen == screenUpdates {
+			m.refreshScreen()
 		}
 		if strings.TrimSpace(m.opts.Config.Repositories.PluginsURL) == "" {
 			return m, m.loadInstalled()
 		}
 		return m, tea.Batch(m.loadInstalled(), m.loadAvailable())
+	case updateCheckMsg:
+		if msg.err != nil {
+			m.err = msg.err.Error()
+		} else {
+			m.err = ""
+			if msg.result.Update {
+				m.status = fmt.Sprintf("update available: %s -> %s (%s)", msg.result.Current, msg.result.Latest, msg.result.Channel)
+			} else {
+				m.status = fmt.Sprintf("up to date: %s (%s)", msg.result.Current, msg.result.Channel)
+			}
+		}
+		m.showUpdates()
+	case updateVersionsMsg:
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.showUpdates()
+		} else {
+			m.err = ""
+			m.showUpdateVersions(msg.items)
+		}
 	case runDoneMsg:
 		if msg.err != nil {
 			m.err = msg.err.Error()
@@ -238,6 +273,7 @@ func (m *Model) showDashboard() {
 		item{"Installed plugins", fmt.Sprintf("%d installed", len(m.installed)), "installed", nil},
 		item{"Available plugins", fmt.Sprintf("%d loaded from repository", len(m.available)), "available", nil},
 		item{"Commands", "Fuzzy select an installed plugin command", "commands", nil},
+		item{"Updates", "Check, apply, or change forge versions", "updates", nil},
 		item{"Config", "Edit global settings", "config", nil},
 		item{"Secrets", "Set or delete secrets", "secrets", nil},
 	)
@@ -247,12 +283,13 @@ func (m *Model) showDashboard() {
 func (m *Model) showInstalled() {
 	m.screen = screenInstalled
 	m.list.Title = "Installed Plugins"
-	items := make([]list.Item, 0, len(m.installed))
+	items := make([]list.Item, 0, len(m.installed)+1)
+	items = append(items, item{"Install from Available plugins", "Browse repository plugins and press enter to install", "available", nil})
 	for _, p := range m.installed {
 		items = append(items, item{p.Name, p.Version + " - enter: update, x: remove via actions", "plugin", p})
 	}
-	if len(items) == 0 {
-		items = append(items, item{"No plugins installed", "Install one from Available plugins", "noop", nil})
+	if len(m.installed) == 0 {
+		items = append(items, item{"No plugins installed", "Use the install option above to browse Available plugins", "noop", nil})
 	}
 	m.list.SetItems(items)
 }
@@ -268,7 +305,7 @@ func (m *Model) showAvailable() {
 	}
 	items := make([]list.Item, 0, len(m.available))
 	for _, p := range m.available {
-		items = append(items, item{p.Name, p.Latest + " - " + p.Description, "install", p})
+		items = append(items, item{p.Name, p.Latest + " - enter: install - " + p.Description, "install", p})
 	}
 	if len(items) == 0 {
 		items = append(items, item{"No repository data", "Press r to retry or configure repositories.plugins_url", "noop", nil})
@@ -287,6 +324,39 @@ func (m *Model) showCommands() {
 	}
 	if len(items) == 0 {
 		items = append(items, item{"No commands", "Install a plugin first", "noop", nil})
+	}
+	m.list.SetItems(items)
+}
+
+func (m *Model) showUpdates() {
+	m.screen = screenUpdates
+	m.list.Title = "Updates"
+	if strings.TrimSpace(m.opts.Config.Repositories.UpdatesURL) == "" {
+		m.list.SetItems([]list.Item{
+			item{"Missing updates repository", "Set repositories.updates_url in Config > Global settings", "config-global", nil},
+		})
+		return
+	}
+	channel := m.opts.Config.Repositories.Channel
+	m.list.SetItems([]list.Item{
+		item{"Check for updates", "Current channel: " + channel, "update-check", nil},
+		item{"Auto update to latest", "Download and replace forge with latest version on " + channel, "update-apply", nil},
+		item{"Install specific version", "Choose a version available on " + channel, "update-versions", nil},
+		item{"Switch to stable", "Use stable update channel", "update-channel", "stable"},
+		item{"Switch to beta", "Use beta update channel", "update-channel", "beta"},
+		item{"Switch to dev", "Use dev update channel", "update-channel", "dev"},
+	})
+}
+
+func (m *Model) showUpdateVersions(versions []string) {
+	m.screen = screenUpdates
+	m.list.Title = "Update Versions: " + m.opts.Config.Repositories.Channel
+	items := make([]list.Item, 0, len(versions))
+	for _, version := range versions {
+		items = append(items, item{version, "enter: install this forge version", "update-apply-version", version})
+	}
+	if len(items) == 0 {
+		items = append(items, item{"No versions", "Repository returned no versions for this channel", "noop", nil})
 	}
 	m.list.SetItems(items)
 }
@@ -381,6 +451,8 @@ func (m *Model) refreshScreen() {
 		m.showAvailable()
 	case screenCommands:
 		m.showCommands()
+	case screenUpdates:
+		m.showUpdates()
 	case screenConfig:
 		m.showConfig()
 	default:
@@ -404,6 +476,8 @@ func (m Model) activateSelected() (tea.Model, tea.Cmd) {
 		return m, m.loadAvailable()
 	case "commands":
 		m.showCommands()
+	case "updates":
+		m.showUpdates()
 	case "config":
 		m.showConfig()
 	case "config-global":
@@ -420,6 +494,16 @@ func (m Model) activateSelected() (tea.Model, tea.Cmd) {
 	case "plugin":
 		p := selected.value.(plugin.Installed)
 		return m, m.updatePlugin(p.Name)
+	case "update-check":
+		return m, m.checkForgeUpdate()
+	case "update-apply":
+		return m, m.applyForgeUpdate("")
+	case "update-versions":
+		return m, m.loadUpdateVersions()
+	case "update-apply-version":
+		return m, m.applyForgeUpdate(selected.value.(string))
+	case "update-channel":
+		return m.changeUpdateChannel(selected.value.(string))
 	case "command":
 		w := selected.value.(commandWizard)
 		w.args = []string{}
@@ -490,6 +574,8 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.opts.Config = cfg
 			m.opts.Plugins.Config = cfg
 			m.opts.Plugins.Repo = repo.New(cfg.Repositories.PluginsURL)
+			m.opts.Updates.Config = cfg
+			m.opts.Updates.Repo = repo.New(cfg.Repositories.UpdatesURL)
 			m.opts.Secrets = secrets.New(m.opts.Paths, cfg.Security.SecretsBackend)
 			return m, func() tea.Msg {
 				err := config.Save(m.opts.Paths.ConfigPath, cfg)
@@ -638,6 +724,59 @@ func (m Model) removePlugin(name string) tea.Cmd {
 	return func() tea.Msg {
 		err := m.opts.Plugins.Remove(name)
 		return actionMsg{status: "removed " + name, err: err}
+	}
+}
+
+func (m Model) checkForgeUpdate() tea.Cmd {
+	return func() tea.Msg {
+		if err := config.RequireUpdatesURL(m.opts.Config); err != nil {
+			return updateCheckMsg{err: err}
+		}
+		result, err := m.opts.Updates.Check(context.Background())
+		return updateCheckMsg{result: result, err: err}
+	}
+}
+
+func (m Model) applyForgeUpdate(version string) tea.Cmd {
+	return func() tea.Msg {
+		if err := config.RequireUpdatesURL(m.opts.Config); err != nil {
+			return actionMsg{err: err}
+		}
+		var err error
+		if version == "" {
+			err = m.opts.Updates.Apply(context.Background(), "")
+			return actionMsg{status: "updated forge to latest", err: err}
+		}
+		err = m.opts.Updates.ApplyVersion(context.Background(), "", version)
+		return actionMsg{status: "updated forge to " + version, err: err}
+	}
+}
+
+func (m Model) loadUpdateVersions() tea.Cmd {
+	return func() tea.Msg {
+		if err := config.RequireUpdatesURL(m.opts.Config); err != nil {
+			return updateVersionsMsg{err: err}
+		}
+		idx, err := m.opts.Updates.Versions(context.Background(), m.opts.Config.Repositories.Channel)
+		return updateVersionsMsg{items: idx.Versions, err: err}
+	}
+}
+
+func (m Model) changeUpdateChannel(channel string) (tea.Model, tea.Cmd) {
+	if channel != "stable" && channel != "beta" && channel != "dev" {
+		return m, func() tea.Msg {
+			return actionMsg{err: fmt.Errorf("unsupported channel %q", channel)}
+		}
+	}
+	cfg := m.opts.Config
+	cfg.Repositories.Channel = channel
+	m.opts.Config = cfg
+	m.opts.Plugins.Config = cfg
+	m.opts.Updates.Config = cfg
+	m.showUpdates()
+	return m, func() tea.Msg {
+		err := config.Save(m.opts.Paths.ConfigPath, cfg)
+		return actionMsg{status: "switched update channel to " + channel, err: err}
 	}
 }
 

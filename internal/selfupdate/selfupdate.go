@@ -32,7 +32,7 @@ type CheckResult struct {
 
 func (m Manager) Check(ctx context.Context) (CheckResult, error) {
 	channel := m.Config.Repositories.Channel
-	idx, err := m.updateIndex(ctx, channel)
+	idx, err := m.Versions(ctx, channel)
 	if err != nil {
 		return CheckResult{}, err
 	}
@@ -55,13 +55,28 @@ func (m Manager) Apply(ctx context.Context, targetPath string) error {
 	if !res.Update {
 		return nil
 	}
+	return m.ApplyVersion(ctx, targetPath, res.Latest)
+}
+
+func (m Manager) ApplyVersion(ctx context.Context, targetPath, version string) error {
+	channel := m.Config.Repositories.Channel
+	idx, err := m.Versions(ctx, channel)
+	if err != nil {
+		return err
+	}
+	if version == "" {
+		version = idx.Latest
+	}
+	if !containsVersion(idx.Versions, version) {
+		return fmt.Errorf("version %s is not available on channel %s", version, channel)
+	}
 	pkgName := fmt.Sprintf("forge_%s_%s%s", runtime.GOOS, runtime.GOARCH, platform.PackageExt(runtime.GOOS))
-	rel := filepath.ToSlash(filepath.Join(res.Channel, res.Latest, pkgName))
+	rel := filepath.ToSlash(filepath.Join(channel, version, pkgName))
 	pkg, err := m.Repo.GetBytes(ctx, rel)
 	if err != nil {
 		return err
 	}
-	base := filepath.ToSlash(filepath.Join(res.Channel, res.Latest))
+	base := filepath.ToSlash(filepath.Join(channel, version))
 	checksums, err := m.Repo.GetBytes(ctx, base+"/checksums.txt")
 	if err != nil {
 		return err
@@ -115,6 +130,13 @@ func (m Manager) Apply(ctx context.Context, targetPath string) error {
 	return os.Rename(newPath, targetPath)
 }
 
+func (m Manager) Versions(ctx context.Context, channel string) (repo.UpdateIndex, error) {
+	if channel == "" {
+		channel = m.Config.Repositories.Channel
+	}
+	return m.updateIndex(ctx, channel)
+}
+
 func (m Manager) updateIndex(ctx context.Context, channel string) (repo.UpdateIndex, error) {
 	rel := filepath.ToSlash(filepath.Join(channel, "index.json"))
 	body, err := m.Repo.GetBytes(ctx, rel)
@@ -140,4 +162,13 @@ func (m Manager) updateIndex(ctx context.Context, channel string) (repo.UpdateIn
 
 func (m Manager) signingPublicKey(ctx context.Context) (string, error) {
 	return security.RepositoryPublicKey(ctx, m.Paths, m.Config, m.Repo, "updates")
+}
+
+func containsVersion(versions []string, version string) bool {
+	for _, candidate := range versions {
+		if candidate == version {
+			return true
+		}
+	}
+	return false
 }

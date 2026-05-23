@@ -99,6 +99,9 @@ forge config get repositories.plugins_url
 forge config set repositories.plugins_url https://bucket.example.com/forge/plugins
 forge config set repositories.updates_url https://bucket.example.com/forge/updates
 forge self-update channel stable
+forge self-update check
+forge self-update versions
+forge self-update apply --version 0.2.0
 ```
 
 Manage secrets:

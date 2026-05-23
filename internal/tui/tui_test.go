@@ -7,6 +7,7 @@ import (
 	"github.com/glieske/forge/internal/config"
 	"github.com/glieske/forge/internal/platform"
 	"github.com/glieske/forge/internal/plugin"
+	"github.com/glieske/forge/internal/repo"
 )
 
 func TestNewDashboardDoesNotRequireRepositoryData(t *testing.T) {
@@ -32,6 +33,76 @@ func TestShowAvailableWithoutPluginsURLShowsConfigurationWarning(t *testing.T) {
 	view := model.View()
 	if !strings.Contains(view, "Missing plugins repository") {
 		t.Fatalf("expected missing repository warning, got:\n%s", view)
+	}
+}
+
+func TestShowInstalledIncludesInstallOption(t *testing.T) {
+	model := New(Options{Config: config.Default()})
+	model.showInstalled()
+	first := model.list.Items()[0].(item)
+	if first.title != "Install from Available plugins" || first.action != "available" {
+		t.Fatalf("first = %#v", first)
+	}
+}
+
+func TestShowAvailablePluginItemsInstallOnEnter(t *testing.T) {
+	cfg := config.Default()
+	cfg.Repositories.PluginsURL = "https://example.com/plugins"
+	model := New(Options{Config: cfg})
+	model.available = []repo.PluginSummary{
+		{Name: "connect", Latest: "1.2.0", Description: "Connect to services"},
+	}
+	model.showAvailable()
+	first := model.list.Items()[0].(item)
+	if first.action != "install" || !strings.Contains(first.desc, "enter: install") {
+		t.Fatalf("first = %#v", first)
+	}
+}
+
+func TestShowUpdatesWithoutUpdatesURLShowsConfigurationWarning(t *testing.T) {
+	model := New(Options{Config: config.Default()})
+	model.showUpdates()
+	view := model.View()
+	if !strings.Contains(view, "Missing updates repository") {
+		t.Fatalf("expected missing updates repository warning, got:\n%s", view)
+	}
+}
+
+func TestShowUpdatesIncludesCheckApplyAndVersionActions(t *testing.T) {
+	cfg := config.Default()
+	cfg.Repositories.UpdatesURL = "https://example.com/updates"
+	model := New(Options{Config: cfg})
+	model.showUpdates()
+	if len(model.list.Items()) != 6 {
+		t.Fatalf("items = %#v", model.list.Items())
+	}
+	actions := []string{"update-check", "update-apply", "update-versions"}
+	for i, action := range actions {
+		got := model.list.Items()[i].(item)
+		if got.action != action {
+			t.Fatalf("item %d = %#v", i, got)
+		}
+	}
+}
+
+func TestShowUpdateVersionsAppliesSelectedVersion(t *testing.T) {
+	model := New(Options{Config: config.Default()})
+	model.showUpdateVersions([]string{"0.2.0"})
+	first := model.list.Items()[0].(item)
+	if first.action != "update-apply-version" || first.value != "0.2.0" {
+		t.Fatalf("first = %#v", first)
+	}
+}
+
+func TestChangeUpdateChannelUpdatesConfig(t *testing.T) {
+	cfg := config.Default()
+	cfg.Repositories.UpdatesURL = "https://example.com/updates"
+	paths := platform.Paths{ConfigPath: t.TempDir() + "/config.toml"}
+	model := New(Options{Config: cfg, Paths: paths})
+	updated, _ := model.changeUpdateChannel("beta")
+	updatedModel := updated.(Model)
+	if updatedModel.opts.Config.Repositories.Channel != "beta" {
+		t.Fatalf("channel = %q", updatedModel.opts.Config.Repositories.Channel)
 	}
 }
 

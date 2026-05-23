@@ -114,6 +114,7 @@ func (s *runtimeState) runTUI() error {
 		Paths:   s.paths,
 		Config:  s.cfg,
 		Plugins: s.pluginManager(),
+		Updates: selfupdate.Manager{Config: s.cfg, Paths: s.paths, Repo: repo.New(s.cfg.Repositories.UpdatesURL), Version: s.version},
 		Secrets: secrets.New(s.paths, s.cfg.Security.SecretsBackend),
 	})
 }
@@ -275,11 +276,32 @@ func (s *runtimeState) selfUpdateCommand() *cobra.Command {
 		}
 		return printf(cmd.OutOrStdout(), "up to date: %s (%s)\n", res.Current, res.Channel)
 	}})
-	cmd.AddCommand(&cobra.Command{Use: "apply", RunE: func(cmd *cobra.Command, args []string) error {
+	var applyVersion string
+	apply := &cobra.Command{Use: "apply", RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.RequireUpdatesURL(s.cfg); err != nil {
 			return err
 		}
+		if applyVersion != "" {
+			return mgr().ApplyVersion(cmd.Context(), "", applyVersion)
+		}
 		return mgr().Apply(cmd.Context(), "")
+	}}
+	apply.Flags().StringVar(&applyVersion, "version", "", "target version")
+	cmd.AddCommand(apply)
+	cmd.AddCommand(&cobra.Command{Use: "versions", RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequireUpdatesURL(s.cfg); err != nil {
+			return err
+		}
+		idx, err := mgr().Versions(cmd.Context(), s.cfg.Repositories.Channel)
+		if err != nil {
+			return err
+		}
+		for _, version := range idx.Versions {
+			if err := printf(cmd.OutOrStdout(), "%s\n", version); err != nil {
+				return err
+			}
+		}
+		return nil
 	}})
 	cmd.AddCommand(&cobra.Command{Use: "channel <channel>", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if args[0] != "stable" && args[0] != "beta" && args[0] != "dev" {
