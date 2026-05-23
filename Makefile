@@ -2,6 +2,7 @@
 
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
+GOLANGCI_LINT ?= golangci-lint
 export GOCACHE
 export GOMODCACHE
 
@@ -13,6 +14,7 @@ test:
 
 lint:
 	go vet ./...
+	$(GOLANGCI_LINT) run ./... --timeout=5m
 
 fmt:
 	gofmt -w .

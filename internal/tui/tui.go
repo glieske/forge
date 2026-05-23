@@ -201,11 +201,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = ""
 			m.status = msg.status
 		}
-		if m.screen == screenInput {
+		switch m.screen {
+		case screenInput:
 			m.screen = m.previous
 			m.input.SetValue("")
 			m.refreshScreen()
-		} else if m.screen == screenUpdates {
+		case screenUpdates:
 			m.refreshScreen()
 		}
 		if strings.TrimSpace(m.opts.Config.Repositories.PluginsURL) == "" {
