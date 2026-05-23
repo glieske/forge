@@ -129,6 +129,8 @@ s3://<bucket>/<prefix>/updates/<channel>/
 
 Plugin artifacts should be published by the plugin release process using the layout shown above.
 
+The same deploy job creates or updates GitHub Release `v<version>` and uploads the version assets: platform archives, Cosign bundles, `checksums.txt`, and `checksums.txt.sig`. Non-`stable` channels are marked as prereleases.
+
 Release artifacts are additionally signed with Cosign keyless signing in GitHub Actions. The workflow writes Sigstore bundles next to each archive, then calculates and signs final checksums:
 
 ```text

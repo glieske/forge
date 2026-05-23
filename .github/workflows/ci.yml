@@ -45,7 +45,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
   security-events: write
 
@@ -204,6 +204,29 @@ jobs:
           FORGE_ED25519_PRIVATE_KEY: ${{ secrets.FORGE_ED25519_PRIVATE_KEY }}
           FORGE_ED25519_PUBLIC_KEY: ${{ secrets.FORGE_ED25519_PUBLIC_KEY }}
         run: ./scripts/checksum-release.sh
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          tag="v${VERSION}"
+          version_dir="dist/s3/forge/updates/${CHANNEL}/${VERSION}"
+          prerelease=""
+          if [ "$CHANNEL" != "stable" ]; then
+            prerelease="--prerelease"
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$version_dir"/* --clobber
+          else
+            gh release create "$tag" "$version_dir"/* \
+              --title "forge ${VERSION}" \
+              --notes "forge ${VERSION} (${CHANNEL})" \
+              --target "$GITHUB_SHA" \
+              $prerelease
+          fi
 
       - name: Upload release repository to S3
         run: |

@@ -205,11 +205,11 @@ Build self-update artifacts locally:
 VERSION=0.2.0 CHANNEL=stable make package-release
 ```
 
-In GitHub Actions, release order is: build archives, sign archives with Cosign keyless OIDC, then calculate final SHA256 checksums, sign `checksums.txt`, sign the update `index.json`, and publish `updates/public-key.ed25519`.
+In GitHub Actions, release order is: build archives, sign archives with Cosign keyless OIDC, then calculate final SHA256 checksums, sign `checksums.txt`, sign the update `index.json`, create or update the GitHub Release, and publish `updates/public-key.ed25519`.
 
 ## CI And Security
 
-GitHub Actions runs formatting checks, `go vet`, tests, cross-compilation, `golangci-lint`, Trivy vulnerability scans, and S3 example validation. Manual workflow dispatch can publish update artifacts to a provided S3 bucket. Release archives are signed with Cosign keyless signing through GitHub OIDC; after Cosign bundles are written, final checksums and repository metadata are signed with the configured Ed25519 key.
+GitHub Actions runs formatting checks, `go vet`, tests, cross-compilation, `golangci-lint`, Trivy vulnerability scans, and S3 example validation. Manual workflow dispatch can publish update artifacts to a provided S3 bucket and create a GitHub Release tagged as `v<version>`. Release archives are signed with Cosign keyless signing through GitHub OIDC; after Cosign bundles are written, final checksums and repository metadata are signed with the configured Ed25519 key.
 
 Verify a Cosign bundle:
 
