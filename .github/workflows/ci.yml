@@ -187,7 +187,7 @@ jobs:
         run: make package-release
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v4.0.0
+        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Sign release artifacts with Cosign keyless OIDC
         env:
